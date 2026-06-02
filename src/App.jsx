@@ -53,7 +53,10 @@ Alle prijzen exclusief BTW. Als een prijs 0 is, geef dan 0.`
     })
   });
   const data = await response.json();
-  const text = data.content[0].text;
+  if (!data.content || !data.content[0]) {
+  throw new Error(JSON.stringify(data));
+}
+const text = data.content[0].text;
   const clean = text.replace(/```json|```/g, "").trim();
   return JSON.parse(clean);
 }
