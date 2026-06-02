@@ -6,19 +6,14 @@ const DARKRED = "#B01419";
 async function leesOffertePDF(base64) {
   const response = await fetch("/api/claude", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-opus-4-5",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 4000,
       messages: [{
         role: "user",
         content: [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 }
-          },
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
           {
             type: "text",
             text: `Lees deze Van Hattem dakkapel offerte en geef ALLEEN een JSON object terug, geen uitleg of markdown, puur JSON:
@@ -26,9 +21,9 @@ async function leesOffertePDF(base64) {
   "projectnummer": "...",
   "referentie": "...",
   "datum": "...",
-  "verkoper_naam": "...",
-  "verkoper_email": "...",
-  "verkoper_telefoon": "...",
+  "adviseur_naam": "...",
+  "adviseur_email": "...",
+  "adviseur_telefoon": "...",
   "klant_naam": "...",
   "klant_adres": "...",
   "klant_postcode_stad": "...",
@@ -36,27 +31,32 @@ async function leesOffertePDF(base64) {
   "montage_adres": "...",
   "montage_postcode_stad": "...",
   "dakkapel_type": "...",
-  "dakkapel_omschrijving": "...",
+  "dakkapel_uitvoering": "...",
+  "dakkapel_afmetingen": "...",
+  "dakkapel_hellingshoek": "...",
+  "dakkapel_woonoppervlakte": "...",
   "dakkapel_prijs_excl": 0,
-  "kostenposten": [
-    {"omschrijving": "...", "aantal": 1, "totaal_excl": 0}
-  ],
-  "extra_posten": [
-    {"omschrijving": "...", "aantal": 1, "prijs_excl": 0}
-  ]
+  "bijlage_indeling": "...",
+  "bijlage_materialen": "...",
+  "bijlage_zonwering": "...",
+  "kostenposten": [{"omschrijving": "...", "aantal": 1, "totaal_excl": 0}],
+  "extra_posten": [{"omschrijving": "...", "aantal": 1, "prijs_excl": 0}]
 }
-Waar extra_posten zijn: afvoeren bouwafval, reis/transport, kraan, technisch inmeten, en eventuele andere posten buiten de dakkapel en opties.
-Alle prijzen exclusief BTW. Als een prijs 0 is, geef dan 0.`
+adviseur_naam/email/telefoon is de Schipper Kozijnen contactpersoon (T.a.v. in de offerte).
+klant_naam/adres is de ontvanger van de offerte (Schipper Kozijnen adres bovenaan).
+montage is het montage adres.
+bijlage_indeling: alle tekst over kozijnindeling van links naar rechts.
+bijlage_materialen: alle materiaalkeuzes als tekst.
+bijlage_zonwering: zonwering details.
+Alle prijzen exclusief BTW. Als prijs 0 geef dan 0.`
           }
         ]
       }]
     })
   });
   const data = await response.json();
-  if (!data.content || !data.content[0]) {
-  throw new Error(JSON.stringify(data));
-}
-const text = data.content[0].text;
+  if (!data.content || !data.content[0]) throw new Error(JSON.stringify(data));
+  const text = data.content[0].text;
   const clean = text.replace(/```json|```/g, "").trim();
   return JSON.parse(clean);
 }
@@ -65,6 +65,7 @@ function formatEur(n) {
   if (n == null || isNaN(n)) return "€ 0,00";
   return "€ " + Number(n).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
 export default function App() {
   const [stap, setStap] = useState("upload");
   const [loading, setLoading] = useState(false);
@@ -116,9 +117,8 @@ export default function App() {
     const totaalExcl = subtotaal + extraTotaal;
     const btw = totaalExcl * 0.21;
     const totaalIncl = totaalExcl * 1.21;
-    return { dakkapel, kozijnen, kostenposten, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl };
+    return { dakkapel, kozijnen, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl };
   };
-
   const printOfferte = () => {
     const t = berekenTotalen();
     const kostenHTML = (offerte.kostenposten || []).map((k, i) => {
@@ -130,15 +130,119 @@ export default function App() {
       return "<tr><td><strong>" + k.omschrijving + "</strong></td><td style='text-align:right'>" + k.aantal + "x</td><td style='text-align:right'>" + formatEur(p) + "</td></tr>";
     }).join("");
     const kozijnenHTML = kozijnenPost ? "<tr><td>- Schipper Kozijnen kozijnen</td><td style='text-align:right'>1x</td><td style='text-align:right'>" + formatEur(t.kozijnen) + "</td></tr>" : "";
+
     const win = window.open("", "_blank");
-    win.document.write("<!DOCTYPE html><html lang='nl'><head><meta charset='UTF-8'><title>Dakkapel Offerte - " + (offerte.referentie || offerte.projectnummer) + "</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',sans-serif;padding:40px;font-size:13px;color:#1a1a2e}.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:4px solid #E31E24;padding-bottom:16px;margin-bottom:24px}.logo{height:48px}.meta{text-align:right;font-size:12px;color:#555;line-height:1.8}.klantbox{background:#fff5f5;border-left:4px solid #E31E24;padding:14px 18px;margin-bottom:24px;border-radius:0 8px 8px 0}.klantbox h3{font-size:11px;color:#E31E24;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px}.dakkapel{background:#f8f8f8;border:1px solid #eee;border-radius:8px;padding:16px 20px;margin-bottom:20px}.dakkapel h3{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:6px}.dakkapel p{font-size:12px;color:#666;line-height:1.7}.dakkapel .prijs{float:right;font-weight:700;font-size:14px}table{width:100%;border-collapse:collapse;margin-bottom:20px}td{padding:7px 12px;font-size:13px}tr{border-bottom:1px solid #f0f0f0}.subtotaal td{font-weight:700;background:#f8f8f8;border-top:2px solid #eee}.totaal-tabel td{padding:8px 12px}.totaal-row td{font-weight:800;font-size:15px;color:#E31E24;background:#fff5f5;border-top:2px solid #E31E24}.info{font-size:11px;color:#888;border-top:1px solid #eee;padding-top:14px;line-height:1.7;margin-top:20px}@media print{body{padding:20px}}</style></head><body>");
-    win.document.write("<div class='header'><img src='https://subsidie-adviseur.vercel.app/images.png' class='logo' alt='Schipper Kozijnen' /><div style='margin-top:8px;font-size:12px;color:#333;line-height:1.8'><strong style='font-size:14px;color:#E31E24'>Dakkapel Specificatie</strong><br>T.a.v. " + (offerte.klant_naam || "") + "<br>" + (offerte.klant_adres || "") + "<br>" + (offerte.klant_postcode_stad || "") + "</div><div class='meta'><strong style='font-size:16px;color:#1a1a2e'>Projectnummer: " + (offerte.referentie || offerte.projectnummer || "") + "</strong><br>Datum: " + (offerte.datum || "") + "<br><br><strong style='font-size:12px;color:#555'>Uw adviseur:</strong><br>" + (offerte.verkoper_naam || "") + "<br>" + (offerte.verkoper_email || "") + "<br>" + (offerte.verkoper_telefoon || "") + "</div></div>");
-    win.document.write("<div class='klantbox'><h3>Montage adres</h3>" + (offerte.montage_naam || "") + "<br>" + (offerte.montage_adres || "") + "<br>" + (offerte.montage_postcode_stad || "") + "</div>");
-    win.document.write("<div class='dakkapel'><span class='prijs'>" + formatEur(t.dakkapel) + "&nbsp;&nbsp;1x&nbsp;&nbsp;" + formatEur(t.dakkapel) + "</span><h3>" + (offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK").replace(/Van Hattem/g, "Schipper") + "</h3><p>" + (offerte.dakkapel_omschrijving || "").replace(/VH/g, "SK").replace(/Van Hattem/g, "Schipper") + "</p></div>");
-    win.document.write("<table><thead><tr style='background:#E31E24;color:white'><th style='padding:8px 12px;text-align:left'>Opties en overige</th><th style='padding:8px 12px;text-align:right'>Aantal</th><th style='padding:8px 12px;text-align:right'>Prijs</th></tr></thead><tbody>" + kostenHTML + kozijnenHTML + "<tr class='subtotaal'><td colspan='2'><strong>Subtotaal</strong></td><td style='text-align:right'><strong>" + formatEur(t.subtotaal) + "</strong></td></tr></tbody></table>");
-    win.document.write("<table><tbody>" + extraHTML + "</tbody></table>");
-    win.document.write("<table class='totaal-tabel'><tbody><tr><td>Totaal excl. BTW</td><td style='text-align:right;font-weight:700;color:#E31E24'>" + formatEur(t.totaalExcl) + "</td></tr><tr><td>21% BTW</td><td style='text-align:right'>" + formatEur(t.btw) + "</td></tr><tr class='totaal-row'><td>Totaal incl. BTW</td><td style='text-align:right'>" + formatEur(t.totaalIncl) + "</td></tr></tbody></table>");
-    win.document.write("<div class='info'>Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).</div>");
+    win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>Dakkapel Specificatie - ${offerte.referentie || offerte.projectnummer}</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;padding:40px;font-size:13px;color:#1a1a2e}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}
+.header-left{display:flex;flex-direction:column;gap:12px}
+.logo{height:52px}
+.klantbox{font-size:12px;color:#333;line-height:1.8}
+.klantbox strong{font-size:13px;color:#1a1a2e}
+.header-right{text-align:right;font-size:12px;color:#555;line-height:1.8}
+.header-right .projnr{font-size:16px;font-weight:800;color:#1a1a2e;display:block;margin-bottom:4px}
+.header-right .adviseur-label{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#E31E24;display:block;margin-top:8px;margin-bottom:2px}
+.redline{height:4px;background:#E31E24;margin-bottom:20px}
+.montage{background:#fff5f5;border-left:4px solid #E31E24;padding:12px 16px;margin-bottom:20px;border-radius:0 8px 8px 0}
+.montage h3{font-size:10px;color:#E31E24;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px}
+.dakkapel-box{background:#f8f8f8;border:1px solid #eee;border-radius:8px;padding:16px 20px;margin-bottom:20px;overflow:hidden}
+.dakkapel-box h3{font-size:14px;font-weight:700;margin-bottom:4px}
+.dakkapel-box p{font-size:12px;color:#666;line-height:1.7}
+.dakkapel-prijs{float:right;font-weight:700;font-size:14px}
+table{width:100%;border-collapse:collapse;margin-bottom:20px}
+thead tr{background:#E31E24;color:white}
+th{padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.06em}
+tbody tr{border-bottom:1px solid #f0f0f0}
+td{padding:7px 12px;font-size:13px}
+.subtotaal-row td{font-weight:700;background:#f8f8f8;border-top:2px solid #eee;padding:10px 12px}
+.totaal-section table{margin-bottom:0}
+.totaal-section td{padding:8px 12px}
+.totaal-row td{font-weight:800;font-size:15px;color:#E31E24;background:#fff5f5;border-top:2px solid #E31E24}
+.bijlage{page-break-before:always;padding-top:20px}
+.bijlage h2{font-size:16px;font-weight:800;color:#1a1a2e;margin-bottom:4px}
+.bijlage h3{font-size:13px;font-weight:700;color:#E31E24;margin:16px 0 8px}
+.bijlage p{font-size:12px;color:#444;line-height:1.8;white-space:pre-line}
+.foto-placeholder{border:2px dashed #ddd;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:13px;margin:16px 0;background:#fafafa}
+.foto-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.av{font-size:11px;color:#666;line-height:1.8;margin-top:8px}
+.av h3{font-size:12px;font-weight:700;color:#1a1a2e;margin:12px 0 4px}
+.info{font-size:11px;color:#888;border-top:1px solid #eee;padding-top:14px;line-height:1.7;margin-top:20px}
+@media print{body{padding:20px}.bijlage{page-break-before:always}}
+</style></head><body>`);
+
+    win.document.write(`<div class="header">
+<div class="header-left">
+  <img src="https://subsidie-adviseur.vercel.app/images.png" class="logo" alt="Schipper Kozijnen" />
+  <div class="klantbox">
+    <strong>Dakkapel Specificatie</strong><br>
+    T.a.v. ${offerte.montage_naam || ""}<br>
+    ${offerte.montage_adres || ""}<br>
+    ${offerte.montage_postcode_stad || ""}
+  </div>
+</div>
+<div class="header-right">
+  <span class="projnr">Projectnummer: ${offerte.referentie || offerte.projectnummer || ""}</span>
+  Datum: ${offerte.datum || ""}
+  <span class="adviseur-label">Uw adviseur bij Schipper Kozijnen:</span>
+  <strong>${offerte.adviseur_naam || ""}</strong><br>
+  ${offerte.adviseur_email || ""}<br>
+  ${offerte.adviseur_telefoon || ""}
+</div></div>`);
+
+    win.document.write(`<div class="redline"></div>`);
+    win.document.write(`<div class="montage"><h3>Montage adres</h3>${offerte.montage_naam || ""}<br>${offerte.montage_adres || ""}<br>${offerte.montage_postcode_stad || ""}</div>`);
+
+    win.document.write(`<div class="dakkapel-box">
+<span class="dakkapel-prijs">${formatEur(t.dakkapel)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapel)}</span>
+<h3>${(offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK").replace(/Van Hattem/g, "Schipper")}</h3>
+<p>Uitvoering: ${offerte.dakkapel_uitvoering || ""}<br>
+Afmetingen (BxH): ${offerte.dakkapel_afmetingen || ""}<br>
+Hellingshoek: ${offerte.dakkapel_hellingshoek || ""}<br>
+Extra woonoppervlakte: ${offerte.dakkapel_woonoppervlakte || ""}</p>
+</div>`);
+
+    win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs</th></tr></thead><tbody>${kostenHTML}${kozijnenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right"><strong>${formatEur(t.subtotaal)}</strong></td></tr></tbody></table>`);
+    win.document.write(`<table><tbody>${extraHTML}</tbody></table>`);
+    win.document.write(`<div class="totaal-section"><table><tbody><tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr><tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalIncl)}</strong></td></tr></tbody></table></div>`);
+    win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).</div>`);
+
+    win.document.write(`<div class="bijlage"><h2>Bijlage A: Toelichting Dakkapel</h2>
+<h3>Schipper Dakkapel</h3>
+<p>Een kwaliteitsproduct naar uw wens samengesteld.</p>
+<p>Uitstraling: ${offerte.dakkapel_uitvoering || ""}
+Afmetingen (BxH): ${offerte.dakkapel_afmetingen || ""}
+Hellingshoek: ${offerte.dakkapel_hellingshoek || ""}
+Extra woonoppervlakte: ${offerte.dakkapel_woonoppervlakte || ""}</p>
+
+${offerte.bijlage_zonwering ? "<h3>Zonwering</h3><p>" + offerte.bijlage_zonwering + "</p>" : ""}
+${offerte.bijlage_indeling ? "<h3>Indeling</h3><p>" + offerte.bijlage_indeling + "</p>" : ""}
+${offerte.bijlage_materialen ? "<h3>Materialen</h3><p>" + offerte.bijlage_materialen + "</p>" : ""}
+
+<h3>Impressie dakkapel</h3>
+<div class="foto-grid">
+  <div class="foto-placeholder">[ Foto voorzijde dakkapel toevoegen ]</div>
+  <div class="foto-placeholder">[ Foto zijaanzicht dakkapel toevoegen ]</div>
+</div>
+</div>`);
+
+    win.document.write(`<div class="bijlage"><h2>Bijlage B: Algemene voorwaarden</h2>
+<div class="av">
+<p>Schipper dakkapellen bouwt zijn kapellen volgens hoge kwaliteitsnormen: Uitsluitend A-merken van Nederlands fabricaat - Balken in het dak geplaatst om de 30 cm, hoogste norm - Isolatiewaarde van Rc 6,3 in het dak en Rc 4,7 in de zijwangen - EPDM dakbedekking - Kozijnen zijn rondom vleugel en kozijn doorboord voor staalbevestiging - Standaard HR++ glas - Kunststof kozijnen en draaikiepramen, naar binnen draaiend, met Politie keurmerk.</p>
+<h3>Goede voorbereiding</h3>
+<p>Een goede voorbereiding is heel belangrijk en voorkomt verrassingen achteraf. Graag informeren wij u over belangrijke aandachtspunten en voorwaarden.</p>
+<h3>Vergunning dakkapel</h3>
+<p>Schipper kan u ondersteunen met het aanvragen van uw vergunning. Wij verzorgen dan de benodigde bouwkundige tekeningen en vragen de vergunning voor u aan.</p>
+<h3>Asbest</h3>
+<p>Wanneer er sprake is van asbest dan dient u dit voor het plaatsen van de dakkapel(len) te verwijderen. Wij kunnen dit voor u verzorgen als dit gewenst is.</p>
+<h3>Oplevering</h3>
+<p>Uw dakkapel wordt geleverd en geplaatst onder voorbehoud van de weersomstandigheden op een nader te bepalen datum. Uw dakkapel wordt casco (zonder binnenafwerking) opgeleverd.</p>
+<h3>Garantie</h3>
+<p>Niet overdraagbaar aan nieuwe bewoners. Op rolluiken en raamdecoratie 2 jaar. Op de dakkapel, kozijnen, dakbedekking en buiten afwerking 10 jaar.</p>
+<h3>Betalingsvoorwaarden</h3>
+<p>50% bij het geven van de opdracht en 50% na oplevering. Bij het ondertekenen van de overeenkomst gaat u akkoord met de benoemde aandachtspunten en voorwaarden.</p>
+</div></div>`);
+
     win.document.write("</body></html>");
     win.document.close();
     setTimeout(() => win.print(), 500);
@@ -191,9 +295,9 @@ export default function App() {
         {stap === "preview" && offerte && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 12 }}>Projectgegevens</div>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 12 }}>Projectgegevens (automatisch ingelezen)</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: 13 }}>
-                {[["Klant", offerte.klant_naam], ["Adres", offerte.montage_adres + " " + offerte.montage_postcode_stad], ["Project", offerte.referentie || offerte.projectnummer], ["Datum", offerte.datum], ["Verkoper", offerte.verkoper_naam], ["Type", (offerte.dakkapel_type || "").replace(/VH/g, "SK")]].map(([label, val]) => (
+                {[["Klant", offerte.montage_naam], ["Montage adres", offerte.montage_adres + " " + offerte.montage_postcode_stad], ["Project", offerte.referentie || offerte.projectnummer], ["Datum", offerte.datum], ["Adviseur Schipper", offerte.adviseur_naam], ["Type", (offerte.dakkapel_type || "").replace(/VH/g, "SK")]].map(([label, val]) => (
                   <div key={label}><span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", display: "block", marginBottom: 2 }}>{label}</span><strong>{val}</strong></div>
                 ))}
               </div>
@@ -295,4 +399,4 @@ export default function App() {
       </div>
     </div>
   );
-                  }
+}
