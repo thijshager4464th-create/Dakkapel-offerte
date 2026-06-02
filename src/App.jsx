@@ -42,21 +42,19 @@ Geef dit JSON terug:
   "dakkapel_afmetingen": "",
   "dakkapel_hellingshoek": "",
   "dakkapel_woonoppervlakte": "",
-  "dakkapel_prijs_excl": 8623.80,
+  "dakkapel_prijs_excl": 0,
   "bijlage_zonwering": "",
   "bijlage_indeling": "",
   "bijlage_materialen": "",
   "kostenposten": [
-    {"omschrijving": "Penant(en)", "aantal": 1, "totaal_excl": 177.69},
-    {"omschrijving": "Elektrisch rolluik(en)", "aantal": 1, "totaal_excl": 1338.84}
+    {"omschrijving": "Penant(en)", "aantal": 1, "totaal_excl": 177.69}
   ],
   "extra_posten": [
-    {"omschrijving": "Afvoeren bouwafval", "aantal": 1, "prijs_excl": 446.28},
-    {"omschrijving": "Reis- en transportkosten", "aantal": 1, "prijs_excl": 159.26}
+    {"omschrijving": "Afvoeren bouwafval", "aantal": 1, "prijs_excl": 446.28}
   ]
 }
 
-BELANGRIJK: Gebruik de EXACTE bedragen uit de offerte. Geef nooit 0 tenzij de prijs echt 0 is. De dakkapel_prijs_excl is het grote bedrag bovenaan (rond de 8000-15000 euro).`
+BELANGRIJK: Gebruik de EXACTE bedragen uit de offerte. Geef nooit 0 tenzij de prijs echt 0 is. De dakkapel_prijs_excl is het grote bedrag bovenaan (rond de 8000-15000 euro). kostenposten zijn ALLEEN de opties zoals penant, rolluik, insectenhor etc. extra_posten zijn ALLEEN losse posten zoals afvoeren bouwafval, transport, kraan, inmeten.`
           }
         ]
       }]
@@ -126,7 +124,8 @@ export default function App() {
     const btw = totaalExcl * 0.21;
     const totaalIncl = totaalExcl * 1.21;
     return { dakkapel, kozijnen, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl };
-  };const printOfferte = () => {
+  };
+  const printOfferte = () => {
     const t = berekenTotalen();
     const kostenHTML = (offerte.kostenposten || []).map((k, i) => {
       const p = prijs(k.totaal_excl || 0, "kost_" + i);
@@ -162,16 +161,17 @@ td{padding:7px 12px;font-size:13px}
 .subtotaal-row td{font-weight:700;background:#f8f8f8;border-top:2px solid #eee;padding:10px 12px}
 .totaal-tabel td{padding:8px 12px}
 .totaal-row td{font-weight:800;font-size:15px;color:#E31E24;background:#fff5f5;border-top:2px solid #E31E24}
+.info{font-size:11px;color:#888;border-top:1px solid #eee;padding-top:12px;line-height:1.7;margin-top:16px}
 .bijlage{page-break-before:always;padding-top:20px}
 .bijlage h2{font-size:16px;font-weight:800;color:#1a1a2e;border-bottom:2px solid #E31E24;padding-bottom:8px;margin-bottom:16px}
-.bijlage h3{font-size:12px;font-weight:700;color:#E31E24;margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.06em}
+.bijlage-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:20px}
+.bijlage h3{font-size:11px;font-weight:700;color:#E31E24;text-transform:uppercase;letter-spacing:0.08em;margin:12px 0 4px}
 .bijlage p{font-size:12px;color:#444;line-height:1.8;white-space:pre-line}
 .foto-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
-.foto-placeholder{border:2px dashed #ddd;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:12px;background:#fafafa;text-align:center;padding:20px}
+.foto-placeholder{border:2px dashed #ddd;border-radius:8px;height:220px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:12px;background:#fafafa;text-align:center;padding:20px}
 .av p{font-size:11px;color:#555;line-height:1.8;margin-bottom:8px}
-.av h3{font-size:11px;font-weight:700;color:#1a1a2e;margin:10px 0 3px}
-.info{font-size:11px;color:#888;border-top:1px solid #eee;padding-top:12px;line-height:1.7;margin-top:16px}
-@media print{body{padding:20px}}
+.av h3{font-size:11px;font-weight:700;color:#1a1a2e;margin:10px 0 3px;text-transform:uppercase;letter-spacing:0.06em}
+@media print{body{padding:20px}.bijlage{page-break-before:always}}
 </style></head><body>`);
 
     win.document.write(`<div class="header">
@@ -202,15 +202,21 @@ td{padding:7px 12px;font-size:13px}
     win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).</div>`);
 
     win.document.write(`<div class="bijlage"><h2>Bijlage A: Toelichting Dakkapel</h2>
+<div class="bijlage-grid">
+<div>
 <h3>Schipper Dakkapel</h3>
-<p>Een kwaliteitsproduct naar uw wens samengesteld.
-Uitstraling: ${offerte.dakkapel_uitvoering || ""}
-Afmetingen (BxH): ${offerte.dakkapel_afmetingen || ""}
-Hellingshoek: ${offerte.dakkapel_hellingshoek || ""}
-Extra woonoppervlakte: ${offerte.dakkapel_woonoppervlakte || ""}</p>
+<p>Een kwaliteitsproduct naar uw wens samengesteld.</p>
+<p><strong>Uitstraling:</strong> ${offerte.dakkapel_uitvoering || ""}
+<strong>Afmetingen (BxH):</strong> ${offerte.dakkapel_afmetingen || ""}
+<strong>Hellingshoek:</strong> ${offerte.dakkapel_hellingshoek || ""}
+<strong>Extra woonoppervlakte:</strong> ${offerte.dakkapel_woonoppervlakte || ""}</p>
 ${offerte.bijlage_zonwering ? "<h3>Zonwering</h3><p>" + offerte.bijlage_zonwering + "</p>" : ""}
-${offerte.bijlage_indeling ? "<h3>Indeling</h3><p>" + offerte.bijlage_indeling + "</p>" : ""}
 ${offerte.bijlage_materialen ? "<h3>Materialen</h3><p>" + offerte.bijlage_materialen + "</p>" : ""}
+</div>
+<div>
+${offerte.bijlage_indeling ? "<h3>Indeling</h3><p>" + offerte.bijlage_indeling + "</p>" : ""}
+</div>
+</div>
 <h3>Impressie dakkapel</h3>
 <div class="foto-grid">
   <div class="foto-placeholder">Foto voorzijde<br>hier invoegen</div>
@@ -218,13 +224,16 @@ ${offerte.bijlage_materialen ? "<h3>Materialen</h3><p>" + offerte.bijlage_materi
 </div></div>`);
 
     win.document.write(`<div class="bijlage"><h2>Bijlage B: Algemene voorwaarden</h2><div class="av">
-<p>Schipper dakkapellen bouwt zijn kapellen volgens hoge kwaliteitsnormen: Uitsluitend A-merken van Nederlands fabricaat - Balken in het dak geplaatst om de 30 cm, hoogste norm - Isolatiewaarde van Rc 6,3 in het dak en Rc 4,7 in de zijwangen - EPDM dakbedekking - Kozijnen zijn rondom vleugel en kozijn doorboord voor staalbevestiging - Standaard HR++ glas - Kunststof kozijnen en draaikiepramen, naar binnen draaiend, met Politie keurmerk.</p>
-<h3>Goede voorbereiding</h3><p>Een goede voorbereiding is heel belangrijk en voorkomt verrassingen achteraf.</p>
-<h3>Vergunning dakkapel</h3><p>Schipper kan u ondersteunen met het aanvragen van uw vergunning. Wij verzorgen dan de benodigde bouwkundige tekeningen en vragen de vergunning voor u aan.</p>
-<h3>Asbest</h3><p>Wanneer er sprake is van asbest dan dient u dit voor het plaatsen van de dakkapel(len) te verwijderen. Wij kunnen dit voor u verzorgen als dit gewenst is.</p>
-<h3>Oplevering</h3><p>Uw dakkapel wordt geleverd en geplaatst onder voorbehoud van de weersomstandigheden. Uw dakkapel wordt casco (zonder binnenafwerking) opgeleverd.</p>
-<h3>Garantie</h3><p>Niet overdraagbaar aan nieuwe bewoners. Op rolluiken en raamdecoratie 2 jaar. Op de dakkapel, kozijnen, dakbedekking en buiten afwerking 10 jaar.</p>
-<h3>Betalingsvoorwaarden</h3><p>50% bij het geven van de opdracht en 50% na oplevering.</p>
+<p>Schipper dakkapellen bouwt zijn kapellen volgens hoge kwaliteitsnormen: Uitsluitend A-merken van Nederlands fabricaat - Balken in het dak geplaatst om de 30 cm, hoogste norm - Isolatiewaarde van Rc 6,3 in het dak en Rc 4,7 in de zijwangen - EPDM dakbedekking - Kozijnen zijn rondom vleugel en kozijn doorboord voor staalbevestiging - Standaard HR++ glas - Kunststof kozijnen en draaikiepramen, naar binnen draaiend, met Politie keurmerk. Naast kwaliteit en uitstraling hechten wij vooral veel waarde aan goede service en snelle levertijden. Onze dakkapellen worden geheel volgens uw wens prefab geproduceerd en daarmee bent u verzekerd van een hoogwaardig kwaliteitsproduct. Voorafgaand aan de productie en plaatsing komt onze specialist alles ter plekke technisch inmeten.</p>
+<h3>Goede voorbereiding</h3><p>Een goede voorbereiding is heel belangrijk en voorkomt verrassingen achteraf. Graag informeren wij u over belangrijke aandachtspunten en voorwaarden.</p>
+<h3>Vergunning dakkapel</h3><p>Schipper kan u ondersteunen met het aanvragen van uw vergunning. Wij verzorgen dan de benodigde bouwkundige tekeningen en vragen de vergunning voor u aan. Vanuit uw gemeente ontvangt u legeskosten voor het behandelen van uw omgevingsvergunning. Ook kan uw gemeente om aanvullende constructie berekeningen vragen. De legeskosten en de kosten van de eventuele constructie berekening zijn geen onderdeel van de vergunning aanvraag, omdat deze per situatie verschillen. Helaas hebben wij geen invloed en inzage in de voortgang van uw gemeente.</p>
+<h3>Kraan gerelateerde vergunningen en maatregelen</h3><p>I.v.m. de veiligheid en bereikbaarheid tijdens het plaatsen van de dakkapellen d.m.v. een hijskraan moeten we in de meeste situaties de gemeente op de hoogte brengen d.m.v. een melding of soms een vergunning. In enkele gevallen moet het kraanbedrijf dit doen. Het kraanbedrijf neemt afhankelijk van de situatie verkeersmaatregelen omdat deze essentieel zijn voor een ongestoorde en veilige uitvoering van de werkzaamheden. Deze externe kosten worden na plaatsing aan u doorberekend.</p>
+<h3>Asbest</h3><p>Wanneer er sprake is van asbest dan dient u dit voor het plaatsen van de dakkapel(len) te verwijderen. Wij kunnen dit voor u verzorgen als dit gewenst is. Wanneer wij op de plaatsingsdatum niet kunnen plaatsen door asbest worden de kosten van de kraan en de montage ploeg aan u doorberekend. Uw makelaar of koopcontract kan u hierin helderheid verschaffen.</p>
+<h3>Oplevering</h3><p>Uw dakkapel wordt geleverd en geplaatst onder voorbehoud van de weersomstandigheden op een nader te bepalen datum. Uw dakkapel wordt casco (zonder binnenafwerking) opgeleverd en elektra zult u zelf (of een installateur) moeten aansluiten.</p>
+<h3>Garantie</h3><p>Niet overdraagbaar aan nieuwe bewoners. Op rolluiken en raamdecoratie 2 jaar. Op de dakkapel, kozijnen, dakbedekking en buiten afwerking 10 jaar. Onze partners: www.kkfh.nl, www.mawipex.com, www.somfy.com, www.milin.nl.</p>
+<h3>Afmeting dakkapel</h3><p>Schipper Kozijnen is niet verantwoordelijk voor de afmetingen wanneer u dit in eigen beheer uitvoert. Graag overleggen we hoe de inmeting gedaan wordt om fouten te voorkomen.</p>
+<h3>Keurmerk</h3><p>Zekerheid voor u. Onze werkzaamheden worden uitgevoerd door gecertificeerde vakmensen. Wij voeren het KOMO-Dakkapellen certificaat, het kwaliteitskeurmerk voor dakkapellen. Wij zijn ook aangesloten bij de VLOK (www.vlok-erkend.nl), de brancheorganisatie van en voor het klussenbedrijf.</p>
+<h3>Betalingsvoorwaarden</h3><p>50% bij het geven van de opdracht en 50% na oplevering. Bij het ondertekenen van de overeenkomst gaat u akkoord met de benoemde aandachtspunten en voorwaarden.</p>
 </div></div>`);
 
     win.document.write("</body></html>");
