@@ -16,7 +16,7 @@ async function leesOffertePDF(base64) {
           { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
           {
             type: "text",
-            text: Lees deze Van Hattem dakkapel offerte en geef ALLEEN een JSON object terug, geen uitleg of markdown, puur JSON:
+            text: 'Lees deze Van Hattem dakkapel offerte en geef ALLEEN een JSON object terug, geen uitleg of markdown, puur JSON:
 {
   "projectnummer": "...",
   "referentie": "...",
@@ -51,7 +51,7 @@ BELANGRIJK:
 - bijlage_indeling: kozijnindeling van links naar rechts.
 - bijlage_materialen: alle materiaalkeuzes.
 - bijlage_zonwering: zonwering details.
-- Alle prijzen exclusief BTW. Als prijs 0 geef dan 0.
+- Alle prijzen exclusief BTW. Als prijs 0 geef dan 0.'
           }
         ]
       }]
