@@ -16,7 +16,7 @@ async function leesOffertePDF(base64) {
           { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
           {
             type: "text",
-            text: `Lees deze Van Hattem dakkapel offerte en geef ALLEEN een JSON object terug, geen uitleg of markdown, puur JSON:
+            text: Lees deze Van Hattem dakkapel offerte en geef ALLEEN een JSON object terug, geen uitleg of markdown, puur JSON:
 {
   "projectnummer": "...",
   "referentie": "...",
@@ -42,13 +42,16 @@ async function leesOffertePDF(base64) {
   "kostenposten": [{"omschrijving": "...", "aantal": 1, "totaal_excl": 0}],
   "extra_posten": [{"omschrijving": "...", "aantal": 1, "prijs_excl": 0}]
 }
-adviseur_naam/email/telefoon is de Schipper Kozijnen contactpersoon (T.a.v. in de offerte).
-klant_naam/adres is de ontvanger van de offerte (Schipper Kozijnen adres bovenaan).
-montage is het montage adres.
-bijlage_indeling: alle tekst over kozijnindeling van links naar rechts.
-bijlage_materialen: alle materiaalkeuzes als tekst.
-bijlage_zonwering: zonwering details.
-Alle prijzen exclusief BTW. Als prijs 0 geef dan 0.`
+BELANGRIJK:
+- adviseur_naam is de naam na T.a.v. bovenaan (Schipper Kozijnen medewerker). NIET Tiemen Bennink of andere Van Hattem medewerkers.
+- adviseur_email en adviseur_telefoon zijn de contactgegevens van diezelfde Schipper persoon.
+- montage is het montage adres onderaan.
+- kostenposten zijn ALLEEN de opties binnen de dakkapel zoals penant, rolluik, insectenhor etc.
+- extra_posten zijn ALLEEN losse posten zoals afvoeren bouwafval, reis en transport, kraan, technisch inmeten. Deze NIET in kostenposten zetten.
+- bijlage_indeling: kozijnindeling van links naar rechts.
+- bijlage_materialen: alle materiaalkeuzes.
+- bijlage_zonwering: zonwering details.
+- Alle prijzen exclusief BTW. Als prijs 0 geef dan 0.
           }
         ]
       }]
