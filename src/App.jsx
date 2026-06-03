@@ -19,12 +19,16 @@ async function leesOffertePDF(base64) {
             text: `Lees deze Van Hattem dakkapel offerte en geef ALLEEN een JSON object terug zonder uitleg of markdown.
 
 REGELS:
-- adviseur_voornaam = voornaam van de Schipper medewerker na "T.a.v." bovenaan (bijv. "Thijs" uit "Thijs.Hager@...")
-- adviseur_achternaam = achternaam van de Schipper medewerker (bijv. "Hager" uit "Dhr. Hager")
-- adviseur_email en adviseur_telefoon = contactgegevens van diezelfde persoon bovenaan
-- dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0, rond 8000-15000 euro)
-- kostenposten = ALLEEN opties zoals penant, rolluik, insectenhor met EXACTE bedragen. GEEN ventilatierooster opnemen.
+- De offerte is GERICHT AAN Schipper Kozijnen. Bovenaan staat "Schipper Kozijnen" en "T.a.v. Dhr. [naam]"
+- adviseur_achternaam = de achternaam in "T.a.v. Dhr. [achternaam]" bovenaan (dit is de Schipper medewerker)
+- adviseur_voornaam = de voornaam uit het emailadres bovenaan (bijv. "Thijs" uit "Thijs.Hager@schipperkozijnen.nl")
+- adviseur_email = het schipperkozijnen.nl emailadres bovenaan
+- adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
+- NIET de Van Hattem verkoper (Tiemen Bennink etc.) gebruiken als adviseur
+- dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0)
+- kostenposten = ALLEEN opties zoals penant, rolluik, insectenhor. GEEN ventilatierooster. GEEN "aangeleverd door" posten.
 - extra_posten = ALLEEN losse posten zoals afvoeren bouwafval, transport, kraan, inmeten
+- indeling inhoud = verwijder "aangeleverd door Schipper Kozijnen" en "aangeleverd door derden" uit alle teksten
 - Alle bedragen EXACT overnemen. NOOIT 0 tenzij prijs echt 0 is.
 
 {
@@ -84,6 +88,11 @@ function formatEur(n) {
   return "€ " + Number(n).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function cleanTekst(s) {
+  if (!s) return "";
+  return s.replace(/\(aangeleverd door Schipper Kozijnen\)/gi, "").replace(/\(aangeleverd door derden\)/gi, "").replace(/aangeleverd door Schipper Kozijnen/gi, "").replace(/aangeleverd door derden/gi, "").trim();
+}
+
 export default function App() {
   const [stap, setStap] = useState("upload");
   const [loading, setLoading] = useState(false);
@@ -92,6 +101,7 @@ export default function App() {
   const [marges, setMarges] = useState({});
   const [kozijnenPost, setKozijnenPost] = useState("");
   const [extraPosten, setExtraPosten] = useState([]);
+  const [eigProjNr, setEigProjNr] = useState("");
   const fileRef = useRef();
 
   const handlePDF = async (e) => {
@@ -115,6 +125,7 @@ export default function App() {
       initMarges["kozijnen"] = false;
       setMarges(initMarges);
       setExtraPosten(data.extra_posten || []);
+      setEigProjNr(data.projectnummer || "");
       setStap("preview");
     } catch (err) {
       setError("Kon PDF niet lezen: " + err.message);
@@ -137,31 +148,32 @@ export default function App() {
     const btw = totaalExcl * 0.21;
     const totaalIncl = totaalExcl * 1.21;
     return { dakkapel, kozijnen, dakkapelMetKozijnen, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl };
-  };const printOfferte = () => {
+  };
+  const printOfferte = () => {
     const t = berekenTotalen();
     const o = offerte;
     const adviseurNaam = ((o.adviseur_voornaam || "") + " " + (o.adviseur_achternaam || "")).trim();
     const bxh = (o.dakkapel_breedte && o.dakkapel_hoogte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm" : "";
     const bxhxd = (o.dakkapel_breedte && o.dakkapel_hoogte && o.dakkapel_diepte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm x " + o.dakkapel_diepte + " mm" : bxh;
+    const projNrTonen = eigProjNr || o.referentie || o.projectnummer || "";
 
     const kostenHTML = (o.kostenposten || []).map((k, i) => {
       const p = prijs(k.totaal_excl || 0, "kost_" + i);
-      return "<tr><td style='padding:6px 10px'>- " + k.omschrijving + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
+      return "<tr><td style='padding:6px 10px'>- " + cleanTekst(k.omschrijving) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
     }).join("");
 
     const extraHTML = extraPosten.map((k, i) => {
       const p = prijs(k.prijs_excl || 0, "extra_" + i);
-      return "<tr><td style='padding:6px 10px'><strong>" + k.omschrijving + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
+      return "<tr><td style='padding:6px 10px'><strong>" + cleanTekst(k.omschrijving) + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
     }).join("");
 
     const zonweringHTML = (o.zonwering || []).map(z =>
-      "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + z.type + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
+      "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + cleanTekst(z.type) + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
     ).join("");
 
     const indelingHTML = (o.indeling || []).map(k => {
-      const isBold = k.type === "Penant";
-      const inhoudHTML = (k.inhoud || []).map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.7'>- " + item + "</div>").join("");
-      return "<div style='margin-bottom:12px'><div style='display:flex;justify-content:space-between;align-items:baseline'><strong style='font-size:12px'>" + k.type + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
+      const inhoudHTML = (k.inhoud || []).map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.7'>- " + cleanTekst(item) + "</div>").join("");
+      return "<div style='margin-bottom:12px'><div style='display:flex;justify-content:space-between;align-items:baseline'><strong style='font-size:12px'>" + cleanTekst(k.type) + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
     }).join("");
 
     const materialenHTML = (o.materialen || []).map(m =>
@@ -169,7 +181,7 @@ export default function App() {
     ).join("");
 
     const win = window.open("", "_blank");
-    win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>Dakkapel Specificatie - ${o.referentie || o.projectnummer}</title><style>
+    win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>Dakkapel Specificatie - ${projNrTonen}</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;padding:36px 40px;font-size:12px;color:#1a1a2e;line-height:1.5}
 .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
@@ -222,7 +234,7 @@ td{padding:6px 10px;font-size:12px}
   </div>
 </div>
 <div class="header-right">
-  <span class="projnr">Projectnummer: ${o.referentie || o.projectnummer || ""}</span>
+  <span class="projnr">Projectnummer: ${projNrTonen}</span>
   Datum: ${o.datum || ""}
   <span class="adviseur-label">Uw adviseur bij Schipper Kozijnen:</span>
   <strong>${adviseurNaam}</strong><br>
@@ -232,7 +244,7 @@ td{padding:6px 10px;font-size:12px}
 
     win.document.write(`<div class="redline"></div>`);
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam || ""}<br>${o.montage_adres || ""}<br>${o.montage_postcode_stad || ""}</div>`);
-    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelMetKozijnen)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelMetKozijnen)}</span><h3>${(o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper")}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
+    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelMetKozijnen)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelMetKozijnen)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
     win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal)}</strong></td></tr></tbody></table>`);
     win.document.write(`<table><tbody>${extraHTML}</tbody></table>`);
     win.document.write(`<table class="totaal-tabel"><tbody><tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr><tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalIncl)}</strong></td></tr></tbody></table>`);
@@ -269,7 +281,8 @@ td{padding:6px 10px;font-size:12px}
 </div>
 <div>
   <span class="bij-label">Indeling</span>
-  <p style="font-size:10px;color:#444;margin-bottom:8px">De volgende indeling is gekozen voor de dakkapel, van buitenaf gezien, van links naar rechts</p>
+  <p style="font-size:10px;color:#444;margin-bottom:4px">De volgende indeling is gekozen voor de dakkapel, van buitenaf gezien, van links naar rechts</p>
+  <p style="font-size:10px;color:#888;margin-bottom:10px;font-style:italic">Zie kozijn omschrijving voor verdere specificaties per kozijn.</p>
   ${indelingHTML}
 </div>
 </div>
@@ -357,12 +370,17 @@ td{padding:6px 10px;font-size:12px}
 
         {stap === "preview" && offerte && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 12 }}>Projectgegevens</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: 13 }}>
-                {[["Klant", offerte.montage_naam], ["Adres", offerte.montage_adres + " " + offerte.montage_postcode_stad], ["Project", offerte.referentie || offerte.projectnummer], ["Datum", offerte.datum], ["Adviseur Schipper", ((offerte.adviseur_voornaam || "") + " " + (offerte.adviseur_achternaam || "")).trim()], ["Type", (offerte.dakkapel_type || "").replace(/VH/g, "SK")]].map(([label, val]) => (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: 13, marginBottom: 16 }}>
+                {[["Klant", offerte.montage_naam], ["Adres", offerte.montage_adres + " " + offerte.montage_postcode_stad], ["Datum", offerte.datum], ["Adviseur Schipper", ((offerte.adviseur_voornaam || "") + " " + (offerte.adviseur_achternaam || "")).trim()], ["VH Referentie", offerte.referentie || offerte.projectnummer]].map(([label, val]) => (
                   <div key={label}><span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", display: "block", marginBottom: 2 }}>{label}</span><strong>{val}</strong></div>
                 ))}
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Schipper Projectnummer (eigen)</label>
+                <input value={eigProjNr} onChange={e => setEigProjNr(e.target.value)} placeholder="bijv. 2026-001" style={{ padding: "8px 12px", border: "2px solid " + RED, borderRadius: 8, fontSize: 14, fontWeight: 600, outline: "none", width: 220 }} />
               </div>
             </div>
 
@@ -373,7 +391,7 @@ td{padding:6px 10px;font-size:12px}
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{(offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK")}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{cleanTekst((offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK"))}</div>
                     <div style={{ fontSize: 11, color: "#888" }}>Dakkapel basisprijs</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -412,7 +430,7 @@ td{padding:6px 10px;font-size:12px}
                 {(offerte.kostenposten || []).map((k, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{k.omschrijving}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{cleanTekst(k.omschrijving)}</div>
                       <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -434,7 +452,7 @@ td{padding:6px 10px;font-size:12px}
                 {extraPosten.map((k, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{k.omschrijving}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{cleanTekst(k.omschrijving)}</div>
                       <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
