@@ -19,24 +19,13 @@ function cleanTekst(s) {
     .trim();
 }
 
-function isMontageKozijn(s) {
-  return /montage kozijn/i.test(s);
-}
-function isInmeten(s) {
-  return /technisch inmeten/i.test(s);
-}
-function isAfvoer(s) {
-  return /afvoeren bouwafval/i.test(s);
-}
-function isVoorbereidingRolluik(s) {
-  return /voorbereiding rolluik|voorbereiding screen/i.test(s);
-}
-function isRolluikOfScreen(s) {
-  return /rolluik|zipscreen|screen|zonnescherm/i.test(s) && !/voorbereiding/i.test(s);
-}
-function isTripleGlasNul(k) {
-  return /triple glas|hr\+\+\+/i.test(k.omschrijving) && (k.totaal_excl === 0 || k.totaal_excl === "0");
-}
+function isMontageKozijn(s) { return /montage kozijn/i.test(s); }
+function isInmeten(s) { return /technisch inmeten/i.test(s); }
+function isAfvoer(s) { return /afvoeren bouwafval/i.test(s); }
+function isVoorbereidingRolluik(s) { return /voorbereiding rolluik|voorbereiding screen/i.test(s); }
+function isRolluikOfScreen(s) { return /rolluik|zipscreen|screen|zonnescherm/i.test(s) && !/voorbereiding/i.test(s); }
+function isTripleGlasNul(k) { return /triple glas|hr\+\+\+/i.test(k.omschrijving) && (k.totaal_excl === 0 || k.totaal_excl === "0" || Number(k.totaal_excl) === 0); }
+function isVentilatierooster(s) { return /ventilatierooster/i.test(s); }
 
 async function leesOffertePDF(base64) {
   const response = await fetch("/api/claude", {
@@ -55,7 +44,7 @@ async function leesOffertePDF(base64) {
 
 REGELS:
 - De offerte is GERICHT AAN Schipper Kozijnen. Bovenaan staat "Schipper Kozijnen" en "T.a.v. Dhr. [naam]"
-- adviseur_achternaam = de achternaam in "T.a.v. Dhr. [achternaam]" bovenaan (dit is de Schipper medewerker)
+- adviseur_achternaam = de achternaam in "T.a.v. Dhr. [achternaam]" bovenaan (Schipper medewerker)
 - adviseur_voornaam = de voornaam uit het emailadres bovenaan (bijv. "Thijs" uit "Thijs.Hager@schipperkozijnen.nl")
 - adviseur_email = het schipperkozijnen.nl emailadres bovenaan
 - adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
@@ -172,11 +161,18 @@ export default function App() {
   };
 
   const prijs = (bedrag, margeKey) => marges[margeKey] ? bedrag * 1.2 : bedrag;
-  const kozijnenInclBTW = kozijnenMarge ? (parseFloat(kozijnenPost) || 0) * 1.2 : (parseFloat(kozijnenPost) || 0);
+
+  // Kozijnen incl BTW — marge optioneel
+  const kozijnenInclBTW = kozijnenMarge
+    ? (parseFloat(kozijnenPost) || 0) * 1.2
+    : (parseFloat(kozijnenPost) || 0);
+
+  // Kozijnen omrekenen naar excl BTW voor optelling bij dakkapel
+  const kozijnenExclBTW = kozijnenInclBTW / 1.21;
 
   const verwerkKosten = () => {
-    if (!offerte) return { dakkapelExtra: 0, zichtbarePosten: [], rolluikExtra: {} };
-    let dakkapelExtra = 0;
+    if (!offerte) return { dakkapelExtraExcl: 0, zichtbarePosten: [], rolluikExtra: {} };
+    let dakkapelExtraExcl = 0;
     const rolluikExtra = {};
     const zichtbarePosten = [];
 
@@ -184,8 +180,9 @@ export default function App() {
       const omschr = k.omschrijving || "";
       const p = prijs(k.totaal_excl || 0, "kost_" + i);
       if (isTripleGlasNul(k)) return;
+      if (isVentilatierooster(omschr)) return;
       if (isMontageKozijn(omschr) || isInmeten(omschr) || isAfvoer(omschr)) {
-        dakkapelExtra += p;
+        dakkapelExtraExcl += p;
         return;
       }
       if (isVoorbereidingRolluik(omschr)) {
@@ -193,31 +190,31 @@ export default function App() {
         if (rolluikIdx >= 0) {
           rolluikExtra[rolluikIdx] = (rolluikExtra[rolluikIdx] || 0) + p;
         } else {
-          dakkapelExtra += p;
+          dakkapelExtraExcl += p;
         }
         return;
       }
       zichtbarePosten.push({ ...k, origIndex: i });
     });
-    return { dakkapelExtra, zichtbarePosten, rolluikExtra };
+    return { dakkapelExtraExcl, zichtbarePosten, rolluikExtra };
   };
 
   const berekenTotalen = () => {
-    if (!offerte) return { dakkapelTotaal: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, btw: 0, totaalIncl: 0, totaalInclBtwEnAsbest: 0 };
-    const { dakkapelExtra, zichtbarePosten, rolluikExtra } = verwerkKosten();
+    if (!offerte) return { dakkapelTotaalExcl: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
+    const { dakkapelExtraExcl, zichtbarePosten, rolluikExtra } = verwerkKosten();
     const dakkapelBase = prijs(offerte.dakkapel_prijs_excl || 0, "dakkapel");
-    const dakkapelTotaal = dakkapelBase + dakkapelExtra;
+    // Kozijnen omgezet naar excl BTW worden opgeteld bij dakkapel
+    const dakkapelTotaalExcl = dakkapelBase + dakkapelExtraExcl + kozijnenExclBTW;
     const kostenTotaal = zichtbarePosten.reduce((sum, k) => {
       const extra = rolluikExtra[k.origIndex] || 0;
       return sum + prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
     }, 0);
-    const subtotaal = dakkapelTotaal + kostenTotaal;
+    const subtotaal = dakkapelTotaalExcl + kostenTotaal;
     const extraTotaal = extraPosten.reduce((sum, k, i) => sum + prijs(k.prijs_excl || 0, "extra_" + i), 0);
     const totaalExcl = subtotaal + extraTotaal;
-    const btw = totaalExcl * 0.21;
     const totaalIncl = totaalExcl * 1.21;
-    const totaalInclBtwEnAsbest = totaalIncl + kozijnenInclBTW + (asbest ? 495 : 0);
-    return { dakkapelTotaal, kostenTotaal, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl, totaalInclBtwEnAsbest };
+    const totaalAlles = totaalIncl + (asbest ? 495 : 0);
+    return { dakkapelTotaalExcl, kostenTotaal, subtotaal, extraTotaal, totaalExcl, totaalIncl, totaalAlles };
   };
   const printOfferte = () => {
     const t = berekenTotalen();
@@ -227,29 +224,35 @@ export default function App() {
     const bxh = (o.dakkapel_breedte && o.dakkapel_hoogte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm" : "";
     const bxhxd = (o.dakkapel_breedte && o.dakkapel_hoogte && o.dakkapel_diepte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm x " + o.dakkapel_diepte + " mm" : bxh;
     const projNrTonen = eigProjNr || o.referentie || o.projectnummer || "";
-
     const docTitel = documentType === "orderbevestiging" ? "Orderbevestiging" : documentType === "inmeten" ? "Offerte na Inmeten" : "Dakkapel Specificatie";
-    const docStempel = documentType === "orderbevestiging" ? "<div style='position:fixed;top:60px;right:40px;border:4px solid #E31E24;color:#E31E24;padding:12px 20px;font-size:20px;font-weight:800;transform:rotate(-15deg);opacity:0.7;border-radius:4px'>ORDERBEVESTIGING</div>" : documentType === "inmeten" ? "<div style='position:fixed;top:60px;right:40px;border:4px solid #E31E24;color:#E31E24;padding:12px 20px;font-size:16px;font-weight:800;transform:rotate(-15deg);opacity:0.7;border-radius:4px'>NA INMETEN</div>" : "";
+    const docStempel = documentType === "orderbevestiging"
+      ? "<div style='position:fixed;top:80px;right:30px;border:4px solid #E31E24;color:#E31E24;padding:12px 20px;font-size:18px;font-weight:800;transform:rotate(-15deg);opacity:0.6;border-radius:4px;pointer-events:none'>ORDERBEVESTIGING</div>"
+      : documentType === "inmeten"
+      ? "<div style='position:fixed;top:80px;right:30px;border:4px solid #E31E24;color:#E31E24;padding:12px 20px;font-size:16px;font-weight:800;transform:rotate(-15deg);opacity:0.6;border-radius:4px;pointer-events:none'>NA INMETEN</div>"
+      : "";
 
     const kostenHTML = zichtbarePosten.map(k => {
       const extra = rolluikExtra[k.origIndex] || 0;
       const p = prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
-      return "<tr><td style='padding:6px 10px'>- " + cleanTekst(k.omschrijving) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
+      const pIncl = p * 1.21;
+      return "<tr><td style='padding:6px 10px'>- " + cleanTekst(k.omschrijving) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
     }).join("");
 
     const extraHTML = extraPosten.map((k, i) => {
-      const p = prijs(k.prijs_excl || 0, "extra_" + i);
+      const p = prijs(k.prijs_excl || 0, "extra_" + i) * 1.21;
       return "<tr><td style='padding:6px 10px'><strong>" + cleanTekst(k.omschrijving) + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
     }).join("");
 
-    const asbestHTML = asbest ? "<tr><td style='padding:6px 10px'><strong>Asbestinventarisatie</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px'>€ 495,00 incl. BTW</td></tr>" : "";
+    const asbestHTML = asbest ? "<tr><td style='padding:6px 10px'><strong>Asbestinventarisatie</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px'>€ 495,00</td></tr>" : "";
 
     const zonweringHTML = (o.zonwering || []).map(z =>
       "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + cleanTekst(z.type) + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
     ).join("");
 
     const indelingHTML = (o.indeling || []).map(k => {
-      const inhoudHTML = (k.inhoud || []).map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.8'>- " + cleanTekst(item) + "</div>").join("");
+      const inhoudHTML = (k.inhoud || [])
+        .filter(item => !isVentilatierooster(item))
+        .map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.8'>- " + cleanTekst(item) + "</div>").join("");
       return "<div style='margin-bottom:16px;padding-bottom:50px;border-bottom:1px dashed #eee'><div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px'><strong style='font-size:12px'>" + cleanTekst(k.type) + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
     }).join("");
 
@@ -282,7 +285,7 @@ tbody tr{border-bottom:1px solid #f0f0f0}
 td{padding:6px 10px;font-size:12px}
 .subtotaal-row td{font-weight:700;background:#f8f8f8;border-top:2px solid #eee;padding:8px 10px}
 .totaal-tabel td{padding:7px 10px}
-.totaal-row td{font-weight:800;font-size:14px;color:#E31E24;background:#fff5f5;border-top:2px solid #E31E24}
+.totaal-row td{font-weight:800;font-size:15px;color:#E31E24;background:#fff5f5;border-top:2px solid #E31E24}
 .info{font-size:10px;color:#888;border-top:1px solid #eee;padding-top:10px;line-height:1.6;margin-top:12px}
 .bijlage{page-break-before:always;padding-top:24px}
 .bij-header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #E31E24;padding-bottom:8px;margin-bottom:16px}
@@ -322,17 +325,11 @@ td{padding:6px 10px;font-size:12px}
 
     win.document.write(`<div class="redline"></div>`);
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam || ""}<br>${o.montage_adres || ""}<br>${o.montage_postcode_stad || ""}</div>`);
-    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelTotaal)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelTotaal)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
-    win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal)}</strong></td></tr></tbody></table>`);
+    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelTotaalExcl * 1.21)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelTotaalExcl * 1.21)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
+    win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs incl. BTW</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal * 1.21)}</strong></td></tr></tbody></table>`);
     win.document.write(`<table><tbody>${extraHTML}${asbestHTML}</tbody></table>`);
-    win.document.write(`<table class="totaal-tabel"><tbody>
-<tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr>
-<tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr>
-${kozijnenInclBTW > 0 ? "<tr><td>Schipper Kozijnen kozijnen (incl. BTW)</td><td style='text-align:right'>" + formatEur(kozijnenInclBTW) + "</td></tr>" : ""}
-${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:right'>€ 495,00</td></tr>" : ""}
-<tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalInclBtwEnAsbest)}</strong></td></tr>
-</tbody></table>`);
-    win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).</div>`);
+    win.document.write(`<table class="totaal-tabel"><tbody><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalAlles)}</strong></td></tr></tbody></table>`);
+    win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% BTW.</div>`);
 
     win.document.write(`<div class="bijlage">
 <div class="bij-header">
@@ -488,18 +485,18 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
 
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 8 }}>Prijzen en Marge</div>
-              <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Schakel marge (x1,2) aan of uit per post. Montage kozijnen, inmeten en afvoeren zijn verwerkt in dakkapel prijs.</div>
+              <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Alle prijzen incl. BTW voor klant. Marge (x1,2) aan of uit per post.</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{cleanTekst((offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK"))}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Dakkapel incl. montage kozijnen, inmeten en afvoeren</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>Dakkapel incl. kozijnen, montage, inmeten en afvoeren</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["dakkapel"] ? "line-through" : "none" }}>{formatEur(offerte.dakkapel_prijs_excl)}</div>
-                      <div style={{ fontWeight: 700, color: RED }}>{formatEur(t.dakkapelTotaal)}</div>
+                      <div style={{ fontWeight: 700, color: RED }}>{formatEur(t.dakkapelTotaalExcl * 1.21)}</div>
+                      <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
                     </div>
                     <button onClick={() => setMarges(m => ({ ...m, dakkapel: !m.dakkapel }))} style={{ background: marges["dakkapel"] ? RED : "#eee", color: marges["dakkapel"] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
                       {marges["dakkapel"] ? "Marge AAN" : "Marge UIT"}
@@ -510,7 +507,7 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f0fff4", borderRadius: 10, border: "1px solid #a8e6c0" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>Schipper Kozijnen kozijnen</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Incl. BTW — wordt direct bij totaal opgeteld</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>Incl. BTW — verwerkt in dakkapel prijs</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -523,15 +520,10 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
                   </div>
                 </div>
 
-                {kozijnenPost && (
-                  <div style={{ padding: "8px 16px", background: "#f0fff4", borderRadius: 8, fontSize: 12, color: "#2D6A4F", fontWeight: 600 }}>
-                    Kozijnen incl. BTW: {formatEur(kozijnenInclBTW)}
-                  </div>
-                )}
-
                 {zichtbarePosten.map(k => {
                   const extra = rolluikExtra[k.origIndex] || 0;
-                  const p = prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
+                  const pExcl = prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
+                  const pIncl = pExcl * 1.21;
                   return (
                     <div key={k.origIndex} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
                       <div>
@@ -540,8 +532,8 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["kost_" + k.origIndex] ? "line-through" : "none" }}>{formatEur(k.totaal_excl + (extra / (marges["kost_" + k.origIndex] ? 1.2 : 1)))}</div>
-                          <div style={{ fontWeight: 700, color: marges["kost_" + k.origIndex] ? RED : "#333" }}>{formatEur(p)}</div>
+                          <div style={{ fontWeight: 700, color: marges["kost_" + k.origIndex] ? RED : "#333" }}>{formatEur(pIncl)}</div>
+                          <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
                         </div>
                         <button onClick={() => setMarges(m => ({ ...m, ["kost_" + k.origIndex]: !m["kost_" + k.origIndex] }))} style={{ background: marges["kost_" + k.origIndex] ? RED : "#eee", color: marges["kost_" + k.origIndex] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
                           {marges["kost_" + k.origIndex] ? "Marge AAN" : "Marge UIT"}
@@ -552,7 +544,7 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
                 })}
 
                 <div style={{ padding: "10px 16px", background: "#f0f0f0", borderRadius: 10, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-                  <span>Subtotaal excl. BTW</span><span>{formatEur(t.subtotaal)}</span>
+                  <span>Subtotaal incl. BTW</span><span>{formatEur(t.subtotaal * 1.21)}</span>
                 </div>
 
                 {extraPosten.map((k, i) => (
@@ -563,8 +555,8 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["extra_" + i] ? "line-through" : "none" }}>{formatEur(k.prijs_excl)}</div>
-                        <div style={{ fontWeight: 700, color: marges["extra_" + i] ? RED : "#333" }}>{formatEur(prijs(k.prijs_excl, "extra_" + i))}</div>
+                        <div style={{ fontWeight: 700, color: marges["extra_" + i] ? RED : "#333" }}>{formatEur(prijs(k.prijs_excl, "extra_" + i) * 1.21)}</div>
+                        <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
                       </div>
                       <button onClick={() => setMarges(m => ({ ...m, ["extra_" + i]: !m["extra_" + i] }))} style={{ background: marges["extra_" + i] ? RED : "#eee", color: marges["extra_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
                         {marges["extra_" + i] ? "Marge AAN" : "Marge UIT"}
@@ -588,17 +580,9 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
 
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 16 }}>Totaaloverzicht</div>
-              {[
-                ["Totaal excl. BTW", formatEur(t.totaalExcl), false],
-                ["21% BTW", formatEur(t.btw), false],
-                ...(kozijnenInclBTW > 0 ? [["Schipper Kozijnen kozijnen (incl. BTW)", formatEur(kozijnenInclBTW), false]] : []),
-                ...(asbest ? [["Asbestinventarisatie (incl. BTW)", "€ 495,00", false]] : []),
-                ["Totaal incl. BTW", formatEur(t.totaalInclBtwEnAsbest), true]
-              ].map(([label, val, bold]) => (
-                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f0f0f0", fontWeight: bold ? 800 : 400, fontSize: bold ? 16 : 14, color: bold ? RED : "#333" }}>
-                  <span>{label}</span><span>{val}</span>
-                </div>
-              ))}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "2px solid " + RED, fontWeight: 800, fontSize: 18, color: RED }}>
+                <span>Totaal incl. BTW</span><span>{formatEur(t.totaalAlles)}</span>
+              </div>
             </div>
 
             <button onClick={printOfferte} style={{ background: RED, color: "white", border: "none", borderRadius: 12, padding: "16px", fontWeight: 800, fontSize: 16, cursor: "pointer", width: "100%", boxShadow: "0 4px 16px rgba(227,30,36,0.3)" }}>
@@ -609,4 +593,4 @@ ${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:r
       </div>
     </div>
   );
-                                              }
+}
