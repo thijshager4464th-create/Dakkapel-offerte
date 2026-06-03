@@ -459,3 +459,72 @@ td{padding:6px 10px;font-size:12px}
                       <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["kost_" + i] ? "line-through" : "none" }}>{formatEur(k.totaal_excl)}</div>
+                        <div style={{ fontWeight: 700, color: marges["kost_" + i] ? RED : "#333" }}>{formatEur(prijs(k.totaal_excl, "kost_" + i))}</div>
+                      </div>
+                      <button onClick={() => setMarges(m => ({ ...m, ["kost_" + i]: !m["kost_" + i] }))} style={{ background: marges["kost_" + i] ? RED : "#eee", color: marges["kost_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {marges["kost_" + i] ? "Marge AAN" : "Marge UIT"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ padding: "10px 16px", background: "#f0f0f0", borderRadius: 10, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
+                  <span>Subtotaal</span><span>{formatEur(t.subtotaal)}</span>
+                </div>
+
+                {extraPosten.map((k, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{cleanTekst(k.omschrijving)}</div>
+                      <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["extra_" + i] ? "line-through" : "none" }}>{formatEur(k.prijs_excl)}</div>
+                        <div style={{ fontWeight: 700, color: marges["extra_" + i] ? RED : "#333" }}>{formatEur(prijs(k.prijs_excl, "extra_" + i))}</div>
+                      </div>
+                      <button onClick={() => setMarges(m => ({ ...m, ["extra_" + i]: !m["extra_" + i] }))} style={{ background: marges["extra_" + i] ? RED : "#eee", color: marges["extra_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {marges["extra_" + i] ? "Marge AAN" : "Marge UIT"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <div onClick={() => setAsbest(a => !a)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: asbest ? "#fff5f5" : "#fafafa", borderRadius: 10, border: asbest ? "1px solid #f5c6c6" : "1px solid #eee", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 18, height: 18, borderRadius: 4, border: asbest ? "2px solid " + RED : "2px solid #ccc", background: asbest ? RED : "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "white", fontWeight: 800, flexShrink: 0 }}>{asbest ? "v" : ""}</div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>Asbestinventarisatie</div>
+                      <div style={{ fontSize: 11, color: "#aaa" }}>€ 495,00 incl. BTW — geen marge</div>
+                    </div>
+                  </div>
+                  <div style={{ fontWeight: 700, color: asbest ? RED : "#aaa" }}>{asbest ? "€ 495,00" : "—"}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 16 }}>Totaaloverzicht</div>
+              {[
+                ["Totaal excl. BTW", formatEur(t.totaalExcl), false],
+                ["21% BTW", formatEur(t.btw), false],
+                ...(asbest ? [["Asbestinventarisatie (incl. BTW)", "€ 495,00", false]] : []),
+                ["Totaal incl. BTW", formatEur(t.totaalInclBtwEnAsbest), true]
+              ].map(([label, val, bold]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f0f0f0", fontWeight: bold ? 800 : 400, fontSize: bold ? 16 : 14, color: bold ? RED : "#333" }}>
+                  <span>{label}</span><span>{val}</span>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={printOfferte} style={{ background: RED, color: "white", border: "none", borderRadius: 12, padding: "16px", fontWeight: 800, fontSize: 16, cursor: "pointer", width: "100%", boxShadow: "0 4px 16px rgba(227,30,36,0.3)" }}>
+              Genereer Schipper Kozijnen Offerte PDF
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
