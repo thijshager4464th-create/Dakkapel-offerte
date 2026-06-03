@@ -122,6 +122,7 @@ export default function App() {
   const [versie, setVersie] = useState("1");
   const [asbest, setAsbest] = useState(false);
   const [documentType, setDocumentType] = useState("offerte");
+  const [aanpassingen, setAanpassingen] = useState([{ omschrijving: "", bedrag: "", zichtbaar: true }]);
   const fileRef = useRef();
 
   const handlePDF = async (e) => {
@@ -150,6 +151,7 @@ export default function App() {
       setKozijnenPost("");
       setKozijnenMarge(false);
       setDocumentType("offerte");
+      setAanpassingen([{ omschrijving: "", bedrag: "", zichtbaar: true }]);
       setStap("preview");
     } catch (err) {
       setError("Kon PDF niet lezen: " + err.message);
@@ -158,12 +160,8 @@ export default function App() {
     }
   };
 
-  // Prijs met marge per key
   const pm = (bedrag, key) => marges[key] ? bedrag * 1.2 : bedrag;
-
-  const kozijnenInclBTW = kozijnenMarge
-    ? (parseFloat(kozijnenPost) || 0) * 1.2
-    : (parseFloat(kozijnenPost) || 0);
+  const kozijnenInclBTW = kozijnenMarge ? (parseFloat(kozijnenPost) || 0) * 1.2 : (parseFloat(kozijnenPost) || 0);
   const kozijnenExclBTW = kozijnenInclBTW / 1.21;
 
   const getRolluikExtra = () => {
@@ -181,12 +179,10 @@ export default function App() {
   const berekenTotalen = () => {
     if (!offerte) return { dakkapelTotaalExcl: 0, subtotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
     const rx = getRolluikExtra();
-
-    // Verborgen posten gaan met hun eigen marge in de dakkapelprijs
     let verborgenExcl = 0;
     (offerte.kostenposten || []).forEach((k, i) => {
       const s = k.omschrijving || "";
-      if (isVerborgenInDakkapel(s)) verborgenExcl += pm(k.totaal_excl || 0, "kost_" + i);
+      if (isVerborgenInDakkapel(s)) { verborgenExcl += pm(k.totaal_excl || 0, "kost_" + i); return; }
       if (isVoorbereidingRolluik(s)) {
         const ri = (offerte.kostenposten || []).findIndex((r, j) => j !== i && isRolluikOfScreen(r.omschrijving || ""));
         if (ri < 0) verborgenExcl += pm(k.totaal_excl || 0, "kost_" + i);
@@ -196,24 +192,20 @@ export default function App() {
       const s = k.omschrijving || "";
       if (isInmeten(s) || isAfvoer(s)) verborgenExcl += pm(k.prijs_excl || 0, "extra_" + i);
     });
-
     const dakkapelTotaalExcl = pm(offerte.dakkapel_prijs_excl || 0, "dakkapel") + verborgenExcl + kozijnenExclBTW;
-
     const kostenTotaal = (offerte.kostenposten || []).reduce((sum, k, i) => {
       const s = k.omschrijving || "";
       if (isTripleGlasNul(k) || isVentilatierooster(s) || isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s)) return sum;
       return sum + pm(k.totaal_excl || 0, "kost_" + i) + (rx[i] || 0);
     }, 0);
-
     const subtotaal = dakkapelTotaalExcl + kostenTotaal;
-
     const extraTotaal = extraPosten
       .filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""))
       .reduce((sum, k, i) => sum + pm(k.prijs_excl || 0, "extra_" + i), 0);
-
     const totaalExcl = subtotaal + extraTotaal;
     const totaalIncl = totaalExcl * 1.21;
-    const totaalAlles = totaalIncl + (asbest ? 495 : 0);
+    const aanpassingTotaal = aanpassingen.reduce((sum, a) => sum + (parseFloat(a.bedrag) || 0), 0);
+    const totaalAlles = totaalIncl + (asbest ? 495 : 0) + aanpassingTotaal;
     return { dakkapelTotaalExcl, kostenTotaal, subtotaal, extraTotaal, totaalExcl, totaalIncl, totaalAlles };
   };
   const printOfferte = () => {
@@ -233,7 +225,6 @@ export default function App() {
       ? "<div style='position:fixed;top:80px;right:30px;border:4px solid #E31E24;color:#E31E24;padding:12px 20px;font-size:16px;font-weight:800;transform:rotate(-15deg);opacity:0.6;border-radius:4px;pointer-events:none'>NA INMETEN</div>"
       : "";
 
-    // PDF: alleen klant-zichtbare kostenposten
     const kostenHTML = (o.kostenposten || []).map((k, i) => {
       const s = k.omschrijving || "";
       if (isTripleGlasNul(k) || isVentilatierooster(s) || isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s)) return "";
@@ -241,7 +232,6 @@ export default function App() {
       return "<tr><td style='padding:6px 10px'>- " + cleanTekst(s) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
     }).join("");
 
-    // PDF: alleen zichtbare extra posten (geen inmeten/afvoer)
     const extraHTML = extraPosten
       .filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""))
       .map(k => {
@@ -251,6 +241,14 @@ export default function App() {
       }).join("");
 
     const asbestHTML = asbest ? "<tr><td style='padding:6px 10px'><strong>Asbestinventarisatie</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px'>€ 495,00</td></tr>" : "";
+
+    const aanpassingHTML = aanpassingen
+      .filter(a => a.zichtbaar && (parseFloat(a.bedrag) || 0) !== 0 && a.omschrijving.trim())
+      .map(a => {
+        const b = parseFloat(a.bedrag) || 0;
+        const kleur = b < 0 ? "color:#2D6A4F" : "";
+        return "<tr><td style='padding:6px 10px'><strong>" + a.omschrijving + "</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px;" + kleur + "'>" + formatEur(b) + "</td></tr>";
+      }).join("");
 
     const zonweringHTML = (o.zonwering || []).map(z =>
       "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + cleanTekst(z.type) + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
@@ -314,7 +312,7 @@ td{padding:6px 10px;font-size:12px}
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam||""}<br>${o.montage_adres||""}<br>${o.montage_postcode_stad||""}</div>`);
     win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelTotaalExcl*1.21)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelTotaalExcl*1.21)}</span><h3>${dakkapelNaam}</h3><p>Uitvoering: ${o.dakkapel_uitvoering||""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek||""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte||""}</p></div>`);
     win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs incl. BTW</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal*1.21)}</strong></td></tr></tbody></table>`);
-    win.document.write(`<table><tbody>${extraHTML}${asbestHTML}</tbody></table>`);
+    win.document.write(`<table><tbody>${extraHTML}${asbestHTML}${aanpassingHTML}</tbody></table>`);
     win.document.write(`<table class="totaal-tabel"><tbody><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalAlles)}</strong></td></tr></tbody></table>`);
     win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% BTW.</div>`);
 
@@ -414,7 +412,7 @@ td{padding:6px 10px;font-size:12px}
               <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Gestreepte posten zijn verborgen in dakkapelprijs op PDF — marge wordt wel meegenomen.</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
-                {/* DAKKAPEL BASIS */}
+                {/* DAKKAPEL */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{dakkapelNaamUI}</div>
@@ -448,7 +446,7 @@ td{padding:6px 10px;font-size:12px}
                   </div>
                 </div>
 
-                {/* ALLE KOSTENPOSTEN */}
+                {/* KOSTENPOSTEN */}
                 {(offerte.kostenposten || []).map((k, i) => {
                   const s = k.omschrijving || "";
                   if (isTripleGlasNul(k) || isVentilatierooster(s)) return null;
@@ -479,7 +477,7 @@ td{padding:6px 10px;font-size:12px}
                   <span>Subtotaal incl. BTW</span><span>{formatEur(t.subtotaal * 1.21)}</span>
                 </div>
 
-                {/* ALLE EXTRA POSTEN */}
+                {/* EXTRA POSTEN */}
                 {extraPosten.map((k, i) => {
                   const s = k.omschrijving || "";
                   const isVerborgen = isInmeten(s) || isAfvoer(s);
@@ -514,6 +512,44 @@ td{padding:6px 10px;font-size:12px}
                   </div>
                   <div style={{ fontWeight: 700, color: asbest ? RED : "#aaa" }}>{asbest ? "€ 495,00" : "—"}</div>
                 </div>
+
+                {/* HANDMATIGE AANPASSINGEN */}
+                <div style={{ borderTop: "2px dashed #eee", paddingTop: 14, marginTop: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", marginBottom: 10 }}>Handmatige aanpassingen</div>
+                  {aanpassingen.map((a, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input
+                        value={a.omschrijving}
+                        onChange={e => setAanpassingen(aa => aa.map((x, j) => j === i ? { ...x, omschrijving: e.target.value } : x))}
+                        placeholder="Omschrijving..."
+                        style={{ flex: 1, padding: "8px 10px", border: "1.5px solid #dde", borderRadius: 8, fontSize: 13, outline: "none" }}
+                      />
+                      <input
+                        type="number"
+                        value={a.bedrag}
+                        onChange={e => setAanpassingen(aa => aa.map((x, j) => j === i ? { ...x, bedrag: e.target.value } : x))}
+                        placeholder="€ bedrag"
+                        style={{ width: 120, padding: "8px 10px", border: "1.5px solid #dde", borderRadius: 8, fontSize: 13, outline: "none", textAlign: "right", color: parseFloat(a.bedrag) < 0 ? "#2D6A4F" : parseFloat(a.bedrag) > 0 ? RED : "#333" }}
+                      />
+                      <button
+                        onClick={() => setAanpassingen(aa => aa.map((x, j) => j === i ? { ...x, zichtbaar: !x.zichtbaar } : x))}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: a.zichtbaar ? "1.5px solid " + RED : "1.5px solid #dde", background: a.zichtbaar ? "#fff5f5" : "#f5f5f5", color: a.zichtbaar ? RED : "#aaa", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        {a.zichtbaar ? "Op PDF" : "Verborgen"}
+                      </button>
+                      {aanpassingen.length > 1 && (
+                        <button
+                          onClick={() => setAanpassingen(aa => aa.filter((_, j) => j !== i))}
+                          style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #dde", background: "white", color: "#aaa", fontSize: 14, cursor: "pointer", fontWeight: 700 }}
+                        >✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setAanpassingen(aa => [...aa, { omschrijving: "", bedrag: "", zichtbaar: true }])}
+                    style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px dashed " + RED, background: "white", color: RED, fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 4 }}
+                  >+ Regel toevoegen</button>
+                </div>
               </div>
             </div>
 
@@ -532,4 +568,4 @@ td{padding:6px 10px;font-size:12px}
       </div>
     </div>
   );
-                                                                                         }
+            }
