@@ -16,6 +16,17 @@ function cleanTekst(s) {
     .replace(/\s*links draaiend/gi, "")
     .replace(/draaikiepraam rechts/gi, "Draaikiepraam")
     .replace(/draaikiepraam links/gi, "Draaikiepraam")
+    .replace(/\bVH\b/g, "SK")
+    .replace(/Van Hattem/gi, "Schipper")
+    .trim();
+}
+
+function cleanDakkapelNaam(s) {
+  if (!s) return "SK Line Dakkapel";
+  return s
+    .replace(/\bVH\b/g, "SK")
+    .replace(/Van Hattem/gi, "Schipper")
+    .replace(/\bSK\b.*\bSK\b/g, "SK")
     .trim();
 }
 
@@ -50,6 +61,8 @@ REGELS:
 - adviseur_email = het schipperkozijnen.nl emailadres bovenaan
 - adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
 - NIET de Van Hattem verkoper gebruiken als adviseur
+- dakkapel_naam = ALLEEN de korte productnaam zoals "VH Line Dakkapel" of "SK Line Dakkapel" (geen positie zoals achterzijde/voorzijde erin)
+- dakkapel_positie = positie van de dakkapel zoals "achterzijde" of "voorzijde"
 - dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0)
 - kostenposten = ALLE opties inclusief montage kozijn, voorbereiding rolluik, triple glas. Bedragen EXACT overnemen.
 - extra_posten = ALLE losse posten zoals transport, kraan, vergunning, brandstoftoeslag, technische tekening, technisch inmeten, afvoeren bouwafval etc.
@@ -66,7 +79,8 @@ REGELS:
   "montage_naam": "",
   "montage_adres": "",
   "montage_postcode_stad": "",
-  "dakkapel_type": "",
+  "dakkapel_naam": "",
+  "dakkapel_positie": "",
   "dakkapel_uitvoering": "",
   "dakkapel_breedte": "",
   "dakkapel_hoogte": "",
@@ -171,7 +185,6 @@ export default function App() {
     const rolluikExtra = {};
     const zichtbarePosten = [];
 
-    // Kostenposten verwerken
     (offerte.kostenposten || []).forEach((k, i) => {
       const omschr = k.omschrijving || "";
       const p = prijs(k.totaal_excl || 0, "kost_" + i);
@@ -187,20 +200,17 @@ export default function App() {
       zichtbarePosten.push({ ...k, origIndex: i });
     });
 
-    // Extra posten: inmeten en afvoeren gaan naar dakkapel, rest blijft zichtbaar
     (offerte.extra_posten || []).forEach((k, i) => {
       const omschr = k.omschrijving || "";
       const p = prijs(k.prijs_excl || 0, "extra_" + i);
-      if (isInmeten(omschr) || isAfvoer(omschr)) {
-        dakkapelExtraExcl += p;
-      }
+      if (isInmeten(omschr) || isAfvoer(omschr)) { dakkapelExtraExcl += p; }
     });
 
     return { dakkapelExtraExcl, zichtbarePosten, rolluikExtra };
   };
 
   const berekenTotalen = () => {
-    if (!offerte) return { dakkapelTotaalExcl: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
+    if (!offerte) return { dakkapelTotaalExcl: 0, subtotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
     const { dakkapelExtraExcl, zichtbarePosten, rolluikExtra } = verwerkKosten();
     const dakkapelBase = prijs(offerte.dakkapel_prijs_excl || 0, "dakkapel");
     const dakkapelTotaalExcl = dakkapelBase + dakkapelExtraExcl + kozijnenExclBTW;
@@ -209,7 +219,6 @@ export default function App() {
       return sum + prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
     }, 0);
     const subtotaal = dakkapelTotaalExcl + kostenTotaal;
-    // Alleen extra posten die NIET inmeten/afvoer zijn
     const extraTotaal = extraPosten
       .filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""))
       .reduce((sum, k, i) => sum + prijs(k.prijs_excl || 0, "extra_" + i), 0);
@@ -223,6 +232,8 @@ export default function App() {
     const o = offerte;
     const { zichtbarePosten, rolluikExtra } = verwerkKosten();
     const adviseurNaam = ((o.adviseur_voornaam || "") + " " + (o.adviseur_achternaam || "")).trim();
+    const positie = o.dakkapel_positie || "achterzijde";
+    const dakkapelNaam = "Dakkapel " + positie + " - " + cleanDakkapelNaam(o.dakkapel_naam || "SK Line Dakkapel");
     const bxh = (o.dakkapel_breedte && o.dakkapel_hoogte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm" : "";
     const bxhxd = (o.dakkapel_breedte && o.dakkapel_hoogte && o.dakkapel_diepte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm x " + o.dakkapel_diepte + " mm" : bxh;
     const projNrTonen = eigProjNr || o.referentie || o.projectnummer || "";
@@ -239,9 +250,8 @@ export default function App() {
       return "<tr><td style='padding:6px 10px'>- " + cleanTekst(k.omschrijving) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
     }).join("");
 
-    // Alleen extra posten die NIET inmeten/afvoer zijn tonen
     const zichtbareExtraPosten = extraPosten.filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""));
-    const extraHTML = zichtbareExtraPosten.map((k, i) => {
+    const extraHTML = zichtbareExtraPosten.map(k => {
       const origIdx = extraPosten.indexOf(k);
       const pIncl = prijs(k.prijs_excl || 0, "extra_" + origIdx) * 1.21;
       return "<tr><td style='padding:6px 10px'><strong>" + cleanTekst(k.omschrijving) + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
@@ -297,8 +307,6 @@ td{padding:6px 10px;font-size:12px}
 .bij-header img{height:34px}
 .bij-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
 .bij-label{font-size:9px;font-weight:800;color:#E31E24;text-transform:uppercase;letter-spacing:0.08em;margin:12px 0 4px;display:block}
-.bij-specs{font-size:11px;color:#333;line-height:1.8}
-.bij-specs strong{font-weight:600}
 .mat-table{width:100%;border-collapse:collapse;table-layout:fixed}
 .foto-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:8px 0 0;page-break-inside:avoid}
 .foto-box{border:2px dashed #ddd;border-radius:6px;height:200px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;background:#fafafa;text-align:center}
@@ -329,7 +337,7 @@ td{padding:6px 10px;font-size:12px}
 
     win.document.write(`<div class="redline"></div>`);
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam || ""}<br>${o.montage_adres || ""}<br>${o.montage_postcode_stad || ""}</div>`);
-    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelTotaalExcl * 1.21)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelTotaalExcl * 1.21)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
+    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelTotaalExcl * 1.21)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelTotaalExcl * 1.21)}</span><h3>${dakkapelNaam}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
     win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs incl. BTW</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal * 1.21)}</strong></td></tr></tbody></table>`);
     win.document.write(`<table><tbody>${extraHTML}${asbestHTML}</tbody></table>`);
     win.document.write(`<table class="totaal-tabel"><tbody><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalAlles)}</strong></td></tr></tbody></table>`);
@@ -337,26 +345,24 @@ td{padding:6px 10px;font-size:12px}
 
     win.document.write(`<div class="bijlage">
 <div class="bij-header">
-  <h2>Bijlage A: Toelichting Dakkapel achterzijde</h2>
+  <h2>Bijlage A: Toelichting Dakkapel ${positie}</h2>
   <img src="https://subsidie-adviseur.vercel.app/images.png" />
 </div>
 <div class="bij-grid">
 <div>
   <span class="bij-label">Schipper Dakkapel</span>
-  <div class="bij-specs">
-    <p>Een kwaliteitsproduct naar uw wens samengesteld.</p>
-    <p style="margin-top:6px">
-      <strong>Uitstraling:</strong> ${o.dakkapel_uitvoering || ""}<br>
-      <strong>Afmetingen (BxHxD):</strong> ${bxhxd}<br>
-      <strong>Inzakmaat (incl. 10mm speling):</strong> ${o.dakkapel_inzakmaat || ""}<br>
-      <strong>Hellingshoek:</strong> ${o.dakkapel_hellingshoek || ""}<br>
-      <strong>Positie op de woning:</strong> achterzijde<br>
-      <strong>Vergunningsplichtig:</strong> Nee<br>
-      <strong>Extra woonoppervlakte:</strong> ${o.dakkapel_woonoppervlakte || ""}<br>
-      <strong>Overstek boei voorkant:</strong> ${o.dakkapel_overstek_voorkant || "260 mm"}<br>
-      <strong>Overstek boei zijkant:</strong> ${o.dakkapel_overstek_zijkant || "150 mm"}
-    </p>
-  </div>
+  <p style="font-size:11px;color:#333;line-height:1.8;margin-bottom:6px">Een kwaliteitsproduct naar uw wens samengesteld.</p>
+  <p style="font-size:11px;color:#333;line-height:1.8">
+    <strong>Uitstraling:</strong> ${o.dakkapel_uitvoering || ""}<br>
+    <strong>Afmetingen (BxHxD):</strong> ${bxhxd}<br>
+    <strong>Inzakmaat (incl. 10mm speling):</strong> ${o.dakkapel_inzakmaat || ""}<br>
+    <strong>Hellingshoek:</strong> ${o.dakkapel_hellingshoek || ""}<br>
+    <strong>Positie op de woning:</strong> ${positie}<br>
+    <strong>Vergunningsplichtig:</strong> Nee<br>
+    <strong>Extra woonoppervlakte:</strong> ${o.dakkapel_woonoppervlakte || ""}<br>
+    <strong>Overstek boei voorkant:</strong> ${o.dakkapel_overstek_voorkant || "260 mm"}<br>
+    <strong>Overstek boei zijkant:</strong> ${o.dakkapel_overstek_zijkant || "150 mm"}
+  </p>
   <span class="bij-label">Zonwering</span>
   <p style="font-size:10px;color:#444;margin-bottom:4px">De volgende zonwering is gekozen voor de dakkapel.</p>
   ${zonweringHTML}
@@ -412,6 +418,7 @@ td{padding:6px 10px;font-size:12px}
   const t = berekenTotalen();
   const { zichtbarePosten, rolluikExtra } = verwerkKosten();
   const zichtbareExtraPosten = extraPosten.filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""));
+  const dakkapelNaamUI = "Dakkapel " + (offerte?.dakkapel_positie || "achterzijde") + " - " + cleanDakkapelNaam(offerte?.dakkapel_naam || "SK Line Dakkapel");
   return (
     <div style={{ minHeight: "100vh", background: "#f7f7f7", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a1a2e" }}>
       <div style={{ background: "linear-gradient(135deg," + DARKRED + "," + RED + ")", color: "white", padding: "12px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 20px rgba(227,30,36,0.3)" }}>
@@ -495,7 +502,7 @@ td{padding:6px 10px;font-size:12px}
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{cleanTekst((offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK"))}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{dakkapelNaamUI}</div>
                     <div style={{ fontSize: 11, color: "#888" }}>Incl. kozijnen, montage, inmeten en afvoeren</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -600,4 +607,4 @@ td{padding:6px 10px;font-size:12px}
       </div>
     </div>
   );
-}
+                      }
