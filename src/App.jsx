@@ -110,6 +110,7 @@ export default function App() {
   const [offerte, setOfferte] = useState(null);
   const [marges, setMarges] = useState({});
   const [kozijnenPost, setKozijnenPost] = useState("");
+  const [kozijnenMarge, setKozijnenMarge] = useState(false);
   const [extraPosten, setExtraPosten] = useState([]);
   const [eigProjNr, setEigProjNr] = useState("");
   const [versie, setVersie] = useState("1");
@@ -134,12 +135,13 @@ export default function App() {
       if (data.kostenposten) data.kostenposten.forEach((_, i) => { initMarges["kost_" + i] = false; });
       if (data.extra_posten) data.extra_posten.forEach((_, i) => { initMarges["extra_" + i] = false; });
       initMarges["dakkapel"] = false;
-      initMarges["kozijnen"] = false;
       setMarges(initMarges);
       setExtraPosten(data.extra_posten || []);
       setEigProjNr(data.projectnummer || "");
       setVersie("1");
       setAsbest(false);
+      setKozijnenPost("");
+      setKozijnenMarge(false);
       setStap("preview");
     } catch (err) {
       setError("Kon PDF niet lezen: " + err.message);
@@ -150,19 +152,24 @@ export default function App() {
 
   const prijs = (bedrag, margeKey) => marges[margeKey] ? bedrag * 1.2 : bedrag;
 
+  // Kozijnen is incl BTW — wordt apart behandeld buiten BTW berekening
+  const kozijnenInclBTW = kozijnenMarge
+    ? (parseFloat(kozijnenPost) || 0) * 1.2
+    : (parseFloat(kozijnenPost) || 0);
+
   const berekenTotalen = () => {
-    if (!offerte) return { dakkapelMetKozijnen: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, btw: 0, totaalIncl: 0, totaalInclBtwEnAsbest: 0 };
+    if (!offerte) return { dakkapel: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, btw: 0, totaalIncl: 0, totaalInclBtwEnAsbest: 0 };
     const dakkapel = prijs(offerte.dakkapel_prijs_excl || 0, "dakkapel");
-    const kozijnen = prijs(parseFloat(kozijnenPost) || 0, "kozijnen");
-    const dakkapelMetKozijnen = dakkapel + kozijnen;
     const kostenposten = (offerte.kostenposten || []).reduce((sum, k, i) => sum + prijs(k.totaal_excl || 0, "kost_" + i), 0);
-    const subtotaal = dakkapelMetKozijnen + kostenposten;
+    const subtotaalExcl = dakkapel + kostenposten;
     const extraTotaal = extraPosten.reduce((sum, k, i) => sum + prijs(k.prijs_excl || 0, "extra_" + i), 0);
-    const totaalExcl = subtotaal + extraTotaal;
+    const totaalExcl = subtotaalExcl + extraTotaal;
     const btw = totaalExcl * 0.21;
     const totaalIncl = totaalExcl * 1.21;
-    const totaalInclBtwEnAsbest = totaalIncl + (asbest ? 495 : 0);
-    return { dakkapel, kozijnen, dakkapelMetKozijnen, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl, totaalInclBtwEnAsbest };
+    // Kozijnen incl BTW wordt direct opgeteld bij totaal incl BTW
+    const totaalInclBtwEnAsbest = totaalIncl + kozijnenInclBTW + (asbest ? 495 : 0);
+    const subtotaal = subtotaalExcl;
+    return { dakkapel, kostenposten, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl, totaalInclBtwEnAsbest };
   };
   const printOfferte = () => {
     const t = berekenTotalen();
@@ -262,10 +269,16 @@ td{padding:6px 10px;font-size:12px}
 
     win.document.write(`<div class="redline"></div>`);
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam || ""}<br>${o.montage_adres || ""}<br>${o.montage_postcode_stad || ""}</div>`);
-    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelMetKozijnen)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelMetKozijnen)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
+    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapel)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapel)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
     win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal)}</strong></td></tr></tbody></table>`);
     win.document.write(`<table><tbody>${extraHTML}${asbestHTML}</tbody></table>`);
-    win.document.write(`<table class="totaal-tabel"><tbody><tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr><tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr>${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:right'>€ 495,00</td></tr>" : ""}<tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalInclBtwEnAsbest)}</strong></td></tr></tbody></table>`);
+    win.document.write(`<table class="totaal-tabel"><tbody>
+<tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr>
+<tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr>
+${kozijnenInclBTW > 0 ? "<tr><td>Schipper Kozijnen kozijnen (incl. BTW)</td><td style='text-align:right'>" + formatEur(kozijnenInclBTW) + "</td></tr>" : ""}
+${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:right'>€ 495,00</td></tr>" : ""}
+<tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalInclBtwEnAsbest)}</strong></td></tr>
+</tbody></table>`);
     win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).</div>`);
 
     win.document.write(`<div class="bijlage">
@@ -419,7 +432,7 @@ td{padding:6px 10px;font-size:12px}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{cleanTekst((offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK"))}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Dakkapel basisprijs</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>Dakkapel basisprijs excl. BTW</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ textAlign: "right" }}>
@@ -435,22 +448,22 @@ td{padding:6px 10px;font-size:12px}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f0fff4", borderRadius: 10, border: "1px solid #a8e6c0" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>Schipper Kozijnen kozijnen</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Wordt opgeteld bij dakkapel basisprijs</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>Incl. BTW — wordt direct bij totaal opgeteld</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13, color: "#2D6A4F", fontWeight: 700 }}>€</span>
                       <input type="number" min="0" value={kozijnenPost} onChange={e => setKozijnenPost(e.target.value)} placeholder="0.00" style={{ width: 90, padding: "5px 8px", border: "1.5px solid #2D6A4F", borderRadius: 6, fontSize: 13, textAlign: "right", outline: "none" }} />
                     </div>
-                    <button onClick={() => setMarges(m => ({ ...m, kozijnen: !m.kozijnen }))} style={{ background: marges["kozijnen"] ? RED : "#eee", color: marges["kozijnen"] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                      {marges["kozijnen"] ? "Marge AAN" : "Marge UIT"}
+                    <button onClick={() => setKozijnenMarge(m => !m)} style={{ background: kozijnenMarge ? RED : "#eee", color: kozijnenMarge ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {kozijnenMarge ? "Marge AAN" : "Marge UIT"}
                     </button>
                   </div>
                 </div>
 
                 {kozijnenPost && (
                   <div style={{ padding: "8px 16px", background: "#f0fff4", borderRadius: 8, fontSize: 12, color: "#2D6A4F", fontWeight: 600 }}>
-                    Dakkapel + kozijnen totaal: {formatEur(t.dakkapelMetKozijnen)}
+                    Kozijnen incl. BTW: {formatEur(kozijnenInclBTW)}
                   </div>
                 )}
 
@@ -473,7 +486,7 @@ td{padding:6px 10px;font-size:12px}
                 ))}
 
                 <div style={{ padding: "10px 16px", background: "#f0f0f0", borderRadius: 10, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-                  <span>Subtotaal</span><span>{formatEur(t.subtotaal)}</span>
+                  <span>Subtotaal excl. BTW</span><span>{formatEur(t.subtotaal)}</span>
                 </div>
 
                 {extraPosten.map((k, i) => (
@@ -512,6 +525,7 @@ td{padding:6px 10px;font-size:12px}
               {[
                 ["Totaal excl. BTW", formatEur(t.totaalExcl), false],
                 ["21% BTW", formatEur(t.btw), false],
+                ...(kozijnenInclBTW > 0 ? [["Schipper Kozijnen kozijnen (incl. BTW)", formatEur(kozijnenInclBTW), false]] : []),
                 ...(asbest ? [["Asbestinventarisatie (incl. BTW)", "€ 495,00", false]] : []),
                 ["Totaal incl. BTW", formatEur(t.totaalInclBtwEnAsbest), true]
               ].map(([label, val, bold]) => (
@@ -529,4 +543,4 @@ td{padding:6px 10px;font-size:12px}
       </div>
     </div>
   );
-                      }
+}
