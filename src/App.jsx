@@ -8,6 +8,8 @@ function cleanTekst(s) {
   return s
     .replace(/\(aangeleverd door Schipper Kozijnen\)/gi, "")
     .replace(/\(aangeleverd door derden\)/gi, "")
+    .replace(/,\s*aangeleverd door Schipper Kozijnen/gi, "")
+    .replace(/,\s*aangeleverd door derden/gi, "")
     .replace(/aangeleverd door Schipper Kozijnen/gi, "")
     .replace(/aangeleverd door derden/gi, "")
     .replace(/\s*rechts draaiend/gi, "")
@@ -40,8 +42,8 @@ REGELS:
 - adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
 - NIET de Van Hattem verkoper (Tiemen Bennink etc.) gebruiken als adviseur
 - dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0)
-- kostenposten = ALLEEN opties zoals penant, rolluik, insectenhor. GEEN ventilatierooster. GEEN aangeleverd door posten.
-- extra_posten = ALLEEN losse posten zoals afvoeren bouwafval, transport, kraan, inmeten
+- kostenposten = ALLE opties inclusief "Montage kozijn(en), aangeleverd door derden". GEEN ventilatierooster. Bedragen EXACT overnemen.
+- extra_posten = ALLE losse posten zoals afvoeren bouwafval, transport, kraan, inmeten, brandstoftoeslag, technische tekening, kraanvergunning etc.
 - Alle bedragen EXACT overnemen. NOOIT 0 tenzij prijs echt 0 is.
 
 {
@@ -527,4 +529,4 @@ td{padding:6px 10px;font-size:12px}
       </div>
     </div>
   );
-}
+                      }
