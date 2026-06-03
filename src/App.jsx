@@ -3,6 +3,20 @@ import { useState, useRef } from "react";
 const RED = "#E31E24";
 const DARKRED = "#B01419";
 
+function cleanTekst(s) {
+  if (!s) return "";
+  return s
+    .replace(/\(aangeleverd door Schipper Kozijnen\)/gi, "")
+    .replace(/\(aangeleverd door derden\)/gi, "")
+    .replace(/aangeleverd door Schipper Kozijnen/gi, "")
+    .replace(/aangeleverd door derden/gi, "")
+    .replace(/\s*rechts draaiend/gi, "")
+    .replace(/\s*links draaiend/gi, "")
+    .replace(/draaikiepraam rechts/gi, "Draaikiepraam")
+    .replace(/draaikiepraam links/gi, "Draaikiepraam")
+    .trim();
+}
+
 async function leesOffertePDF(base64) {
   const response = await fetch("/api/claude", {
     method: "POST",
@@ -26,9 +40,8 @@ REGELS:
 - adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
 - NIET de Van Hattem verkoper (Tiemen Bennink etc.) gebruiken als adviseur
 - dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0)
-- kostenposten = ALLEEN opties zoals penant, rolluik, insectenhor. GEEN ventilatierooster. GEEN "aangeleverd door" posten.
+- kostenposten = ALLEEN opties zoals penant, rolluik, insectenhor. GEEN ventilatierooster. GEEN aangeleverd door posten.
 - extra_posten = ALLEEN losse posten zoals afvoeren bouwafval, transport, kraan, inmeten
-- indeling inhoud = verwijder "aangeleverd door Schipper Kozijnen" en "aangeleverd door derden" uit alle teksten
 - Alle bedragen EXACT overnemen. NOOIT 0 tenzij prijs echt 0 is.
 
 {
@@ -57,9 +70,9 @@ REGELS:
     {"kozijn": "Kozijn 1", "type": "Elektrisch rolluik", "kleur": "RAL 9016 Verkeerswit", "geleiders": "RAL 9016 Verkeerswit", "aansluiting": "Rechts"}
   ],
   "indeling": [
-    {"type": "Raamkozijn", "breedte": "2181 mm", "inhoud": ["Draaikiepraam rechts draaiend", "Insectenhor", "Vast glas"]},
+    {"type": "Raamkozijn", "breedte": "2181 mm", "inhoud": ["Draaikiepraam", "Insectenhor", "Vast glas"]},
     {"type": "Penant", "breedte": "430 mm", "inhoud": []},
-    {"type": "Raamkozijn", "breedte": "2181 mm", "inhoud": ["Vast glas", "Draaikiepraam rechts draaiend", "Insectenhor"]}
+    {"type": "Raamkozijn", "breedte": "2181 mm", "inhoud": ["Vast glas", "Draaikiepraam", "Insectenhor"]}
   ],
   "materialen": [
     {"onderdeel": "Zijwang", "materiaal": "VinyPlus rondkantdelen Horizontaal", "kleur": "RAL 9010 Zuiverwit"}
@@ -88,11 +101,6 @@ function formatEur(n) {
   return "€ " + Number(n).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function cleanTekst(s) {
-  if (!s) return "";
-  return s.replace(/\(aangeleverd door Schipper Kozijnen\)/gi, "").replace(/\(aangeleverd door derden\)/gi, "").replace(/aangeleverd door Schipper Kozijnen/gi, "").replace(/aangeleverd door derden/gi, "").trim();
-}
-
 export default function App() {
   const [stap, setStap] = useState("upload");
   const [loading, setLoading] = useState(false);
@@ -102,6 +110,8 @@ export default function App() {
   const [kozijnenPost, setKozijnenPost] = useState("");
   const [extraPosten, setExtraPosten] = useState([]);
   const [eigProjNr, setEigProjNr] = useState("");
+  const [versie, setVersie] = useState("1");
+  const [asbest, setAsbest] = useState(false);
   const fileRef = useRef();
 
   const handlePDF = async (e) => {
@@ -126,6 +136,8 @@ export default function App() {
       setMarges(initMarges);
       setExtraPosten(data.extra_posten || []);
       setEigProjNr(data.projectnummer || "");
+      setVersie("1");
+      setAsbest(false);
       setStap("preview");
     } catch (err) {
       setError("Kon PDF niet lezen: " + err.message);
@@ -137,7 +149,7 @@ export default function App() {
   const prijs = (bedrag, margeKey) => marges[margeKey] ? bedrag * 1.2 : bedrag;
 
   const berekenTotalen = () => {
-    if (!offerte) return { dakkapelMetKozijnen: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, btw: 0, totaalIncl: 0 };
+    if (!offerte) return { dakkapelMetKozijnen: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, btw: 0, totaalIncl: 0, totaalInclBtwEnAsbest: 0 };
     const dakkapel = prijs(offerte.dakkapel_prijs_excl || 0, "dakkapel");
     const kozijnen = prijs(parseFloat(kozijnenPost) || 0, "kozijnen");
     const dakkapelMetKozijnen = dakkapel + kozijnen;
@@ -147,7 +159,8 @@ export default function App() {
     const totaalExcl = subtotaal + extraTotaal;
     const btw = totaalExcl * 0.21;
     const totaalIncl = totaalExcl * 1.21;
-    return { dakkapel, kozijnen, dakkapelMetKozijnen, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl };
+    const totaalInclBtwEnAsbest = totaalIncl + (asbest ? 495 : 0);
+    return { dakkapel, kozijnen, dakkapelMetKozijnen, subtotaal, extraTotaal, totaalExcl, btw, totaalIncl, totaalInclBtwEnAsbest };
   };
   const printOfferte = () => {
     const t = berekenTotalen();
@@ -167,13 +180,15 @@ export default function App() {
       return "<tr><td style='padding:6px 10px'><strong>" + cleanTekst(k.omschrijving) + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
     }).join("");
 
+    const asbestHTML = asbest ? "<tr><td style='padding:6px 10px'><strong>Asbestinventarisatie</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px'>€ 495,00 incl. BTW</td></tr>" : "";
+
     const zonweringHTML = (o.zonwering || []).map(z =>
       "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + cleanTekst(z.type) + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
     ).join("");
 
     const indelingHTML = (o.indeling || []).map(k => {
-      const inhoudHTML = (k.inhoud || []).map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.7'>- " + cleanTekst(item) + "</div>").join("");
-      return "<div style='margin-bottom:12px'><div style='display:flex;justify-content:space-between;align-items:baseline'><strong style='font-size:12px'>" + cleanTekst(k.type) + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
+      const inhoudHTML = (k.inhoud || []).map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.8'>- " + cleanTekst(item) + "</div>").join("");
+      return "<div style='margin-bottom:16px;padding-bottom:50px;border-bottom:1px dashed #eee'><div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px'><strong style='font-size:12px'>" + cleanTekst(k.type) + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
     }).join("");
 
     const materialenHTML = (o.materialen || []).map(m =>
@@ -181,7 +196,7 @@ export default function App() {
     ).join("");
 
     const win = window.open("", "_blank");
-    win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>Dakkapel Specificatie - ${projNrTonen}</title><style>
+    win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>Dakkapel Specificatie - ${projNrTonen} v${versie}</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;padding:36px 40px;font-size:12px;color:#1a1a2e;line-height:1.5}
 .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
@@ -189,6 +204,7 @@ body{font-family:'Segoe UI',sans-serif;padding:36px 40px;font-size:12px;color:#1
 .klantbox{font-size:12px;color:#333;line-height:1.8;margin-top:10px}
 .header-right{text-align:right;font-size:12px;color:#555;line-height:1.8}
 .projnr{font-size:14px;font-weight:800;color:#1a1a2e;display:block;margin-bottom:2px}
+.versie{display:inline-block;background:#E31E24;color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;margin-left:6px}
 .adviseur-label{font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#E31E24;display:block;margin-top:6px;margin-bottom:2px}
 .redline{height:3px;background:#E31E24;margin-bottom:16px}
 .montage{background:#fff5f5;border-left:4px solid #E31E24;padding:10px 14px;margin-bottom:16px;border-radius:0 6px 6px 0}
@@ -234,7 +250,7 @@ td{padding:6px 10px;font-size:12px}
   </div>
 </div>
 <div class="header-right">
-  <span class="projnr">Projectnummer: ${projNrTonen}</span>
+  <span class="projnr">Projectnummer: ${projNrTonen}<span class="versie">v${versie}</span></span>
   Datum: ${o.datum || ""}
   <span class="adviseur-label">Uw adviseur bij Schipper Kozijnen:</span>
   <strong>${adviseurNaam}</strong><br>
@@ -246,8 +262,8 @@ td{padding:6px 10px;font-size:12px}
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam || ""}<br>${o.montage_adres || ""}<br>${o.montage_postcode_stad || ""}</div>`);
     win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelMetKozijnen)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelMetKozijnen)}</span><h3>${cleanTekst((o.dakkapel_type || "SK Dakkapel").replace(/VH/g,"SK").replace(/Van Hattem/g,"Schipper"))}</h3><p>Uitvoering: ${o.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte || ""}</p></div>`);
     win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal)}</strong></td></tr></tbody></table>`);
-    win.document.write(`<table><tbody>${extraHTML}</tbody></table>`);
-    win.document.write(`<table class="totaal-tabel"><tbody><tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr><tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalIncl)}</strong></td></tr></tbody></table>`);
+    win.document.write(`<table><tbody>${extraHTML}${asbestHTML}</tbody></table>`);
+    win.document.write(`<table class="totaal-tabel"><tbody><tr><td>Totaal excl. BTW</td><td style="text-align:right;font-weight:700;color:#E31E24">${formatEur(t.totaalExcl)}</td></tr><tr><td>21% BTW</td><td style="text-align:right">${formatEur(t.btw)}</td></tr>${asbest ? "<tr><td>Asbestinventarisatie (incl. BTW)</td><td style='text-align:right'>€ 495,00</td></tr>" : ""}<tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalInclBtwEnAsbest)}</strong></td></tr></tbody></table>`);
     win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).</div>`);
 
     win.document.write(`<div class="bijlage">
@@ -282,7 +298,7 @@ td{padding:6px 10px;font-size:12px}
 <div>
   <span class="bij-label">Indeling</span>
   <p style="font-size:10px;color:#444;margin-bottom:4px">De volgende indeling is gekozen voor de dakkapel, van buitenaf gezien, van links naar rechts</p>
-  <p style="font-size:10px;color:#888;margin-bottom:10px;font-style:italic">Zie kozijn omschrijving voor verdere specificaties per kozijn.</p>
+  <p style="font-size:10px;color:#888;font-style:italic;margin-bottom:10px">Zie kozijn omschrijving voor verdere specificaties per kozijn.</p>
   ${indelingHTML}
 </div>
 </div>
@@ -370,7 +386,6 @@ td{padding:6px 10px;font-size:12px}
 
         {stap === "preview" && offerte && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 12 }}>Projectgegevens</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: 13, marginBottom: 16 }}>
@@ -378,9 +393,19 @@ td{padding:6px 10px;font-size:12px}
                   <div key={label}><span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", display: "block", marginBottom: 2 }}>{label}</span><strong>{val}</strong></div>
                 ))}
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Schipper Projectnummer (eigen)</label>
-                <input value={eigProjNr} onChange={e => setEigProjNr(e.target.value)} placeholder="bijv. 2026-001" style={{ padding: "8px 12px", border: "2px solid " + RED, borderRadius: 8, fontSize: 14, fontWeight: 600, outline: "none", width: 220 }} />
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <div>
+                  <label style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Schipper Projectnummer</label>
+                  <input value={eigProjNr} onChange={e => setEigProjNr(e.target.value)} placeholder="bijv. 2026-001" style={{ padding: "8px 12px", border: "2px solid " + RED, borderRadius: 8, fontSize: 14, fontWeight: 600, outline: "none", width: 200 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Versie</label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {["1", "2", "3", "4", "5"].map(v => (
+                      <button key={v} onClick={() => setVersie(v)} style={{ width: 36, height: 36, borderRadius: 8, border: versie === v ? "2px solid " + RED : "1.5px solid #dde", background: versie === v ? RED : "white", color: versie === v ? "white" : "#555", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{v}</button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -434,56 +459,3 @@ td{padding:6px 10px;font-size:12px}
                       <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["kost_" + i] ? "line-through" : "none" }}>{formatEur(k.totaal_excl)}</div>
-                        <div style={{ fontWeight: 700, color: marges["kost_" + i] ? RED : "#333" }}>{formatEur(prijs(k.totaal_excl, "kost_" + i))}</div>
-                      </div>
-                      <button onClick={() => setMarges(m => ({ ...m, ["kost_" + i]: !m["kost_" + i] }))} style={{ background: marges["kost_" + i] ? RED : "#eee", color: marges["kost_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                        {marges["kost_" + i] ? "Marge AAN" : "Marge UIT"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                <div style={{ padding: "10px 16px", background: "#f0f0f0", borderRadius: 10, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-                  <span>Subtotaal</span><span>{formatEur(t.subtotaal)}</span>
-                </div>
-
-                {extraPosten.map((k, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{cleanTekst(k.omschrijving)}</div>
-                      <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 11, color: "#aaa", textDecoration: marges["extra_" + i] ? "line-through" : "none" }}>{formatEur(k.prijs_excl)}</div>
-                        <div style={{ fontWeight: 700, color: marges["extra_" + i] ? RED : "#333" }}>{formatEur(prijs(k.prijs_excl, "extra_" + i))}</div>
-                      </div>
-                      <button onClick={() => setMarges(m => ({ ...m, ["extra_" + i]: !m["extra_" + i] }))} style={{ background: marges["extra_" + i] ? RED : "#eee", color: marges["extra_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                        {marges["extra_" + i] ? "Marge AAN" : "Marge UIT"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 16 }}>Totaaloverzicht</div>
-              {[["Totaal excl. BTW", formatEur(t.totaalExcl), false], ["21% BTW", formatEur(t.btw), false], ["Totaal incl. BTW", formatEur(t.totaalIncl), true]].map(([label, val, bold]) => (
-                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f0f0f0", fontWeight: bold ? 800 : 400, fontSize: bold ? 16 : 14, color: bold ? RED : "#333" }}>
-                  <span>{label}</span><span>{val}</span>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={printOfferte} style={{ background: RED, color: "white", border: "none", borderRadius: 12, padding: "16px", fontWeight: 800, fontSize: 16, cursor: "pointer", width: "100%", boxShadow: "0 4px 16px rgba(227,30,36,0.3)" }}>
-              Genereer Schipper Kozijnen Offerte PDF
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
