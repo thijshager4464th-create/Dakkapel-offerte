@@ -24,8 +24,9 @@ function isInmeten(s) { return /technisch inmeten/i.test(s); }
 function isAfvoer(s) { return /afvoeren bouwafval/i.test(s); }
 function isVoorbereidingRolluik(s) { return /voorbereiding rolluik|voorbereiding screen/i.test(s); }
 function isRolluikOfScreen(s) { return /rolluik|zipscreen|screen|zonnescherm/i.test(s) && !/voorbereiding/i.test(s); }
-function isTripleGlasNul(k) { return /triple glas|hr\+\+\+/i.test(k.omschrijving) && (k.totaal_excl === 0 || k.totaal_excl === "0" || Number(k.totaal_excl) === 0); }
+function isTripleGlasNul(k) { return /triple glas|hr\+\+\+/i.test(k.omschrijving) && Number(k.totaal_excl) === 0; }
 function isVentilatierooster(s) { return /ventilatierooster/i.test(s); }
+function isVerborgenInDakkapel(s) { return isMontageKozijn(s) || isInmeten(s) || isAfvoer(s); }
 
 async function leesOffertePDF(base64) {
   const response = await fetch("/api/claude", {
@@ -50,8 +51,8 @@ REGELS:
 - adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
 - NIET de Van Hattem verkoper gebruiken als adviseur
 - dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0)
-- kostenposten = ALLE opties inclusief montage kozijn, voorbereiding rolluik, triple glas, inmeten. Bedragen EXACT overnemen.
-- extra_posten = ALLE losse posten zoals transport, kraan, vergunning, brandstoftoeslag, technische tekening etc.
+- kostenposten = ALLE opties inclusief montage kozijn, voorbereiding rolluik, triple glas. Bedragen EXACT overnemen.
+- extra_posten = ALLE losse posten zoals transport, kraan, vergunning, brandstoftoeslag, technische tekening, technisch inmeten, afvoeren bouwafval etc.
 - Alle bedragen EXACT overnemen. NOOIT 0 tenzij prijs echt 0 is.
 
 {
@@ -161,13 +162,7 @@ export default function App() {
   };
 
   const prijs = (bedrag, margeKey) => marges[margeKey] ? bedrag * 1.2 : bedrag;
-
-  // Kozijnen incl BTW — marge optioneel
-  const kozijnenInclBTW = kozijnenMarge
-    ? (parseFloat(kozijnenPost) || 0) * 1.2
-    : (parseFloat(kozijnenPost) || 0);
-
-  // Kozijnen omrekenen naar excl BTW voor optelling bij dakkapel
+  const kozijnenInclBTW = kozijnenMarge ? (parseFloat(kozijnenPost) || 0) * 1.2 : (parseFloat(kozijnenPost) || 0);
   const kozijnenExclBTW = kozijnenInclBTW / 1.21;
 
   const verwerkKosten = () => {
@@ -176,26 +171,31 @@ export default function App() {
     const rolluikExtra = {};
     const zichtbarePosten = [];
 
+    // Kostenposten verwerken
     (offerte.kostenposten || []).forEach((k, i) => {
       const omschr = k.omschrijving || "";
       const p = prijs(k.totaal_excl || 0, "kost_" + i);
       if (isTripleGlasNul(k)) return;
       if (isVentilatierooster(omschr)) return;
-      if (isMontageKozijn(omschr) || isInmeten(omschr) || isAfvoer(omschr)) {
-        dakkapelExtraExcl += p;
-        return;
-      }
+      if (isVerborgenInDakkapel(omschr)) { dakkapelExtraExcl += p; return; }
       if (isVoorbereidingRolluik(omschr)) {
         const rolluikIdx = (offerte.kostenposten || []).findIndex((r, j) => j !== i && isRolluikOfScreen(r.omschrijving || ""));
-        if (rolluikIdx >= 0) {
-          rolluikExtra[rolluikIdx] = (rolluikExtra[rolluikIdx] || 0) + p;
-        } else {
-          dakkapelExtraExcl += p;
-        }
+        if (rolluikIdx >= 0) { rolluikExtra[rolluikIdx] = (rolluikExtra[rolluikIdx] || 0) + p; }
+        else { dakkapelExtraExcl += p; }
         return;
       }
       zichtbarePosten.push({ ...k, origIndex: i });
     });
+
+    // Extra posten: inmeten en afvoeren gaan naar dakkapel, rest blijft zichtbaar
+    (offerte.extra_posten || []).forEach((k, i) => {
+      const omschr = k.omschrijving || "";
+      const p = prijs(k.prijs_excl || 0, "extra_" + i);
+      if (isInmeten(omschr) || isAfvoer(omschr)) {
+        dakkapelExtraExcl += p;
+      }
+    });
+
     return { dakkapelExtraExcl, zichtbarePosten, rolluikExtra };
   };
 
@@ -203,14 +203,16 @@ export default function App() {
     if (!offerte) return { dakkapelTotaalExcl: 0, subtotaal: 0, extraTotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
     const { dakkapelExtraExcl, zichtbarePosten, rolluikExtra } = verwerkKosten();
     const dakkapelBase = prijs(offerte.dakkapel_prijs_excl || 0, "dakkapel");
-    // Kozijnen omgezet naar excl BTW worden opgeteld bij dakkapel
     const dakkapelTotaalExcl = dakkapelBase + dakkapelExtraExcl + kozijnenExclBTW;
     const kostenTotaal = zichtbarePosten.reduce((sum, k) => {
       const extra = rolluikExtra[k.origIndex] || 0;
       return sum + prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
     }, 0);
     const subtotaal = dakkapelTotaalExcl + kostenTotaal;
-    const extraTotaal = extraPosten.reduce((sum, k, i) => sum + prijs(k.prijs_excl || 0, "extra_" + i), 0);
+    // Alleen extra posten die NIET inmeten/afvoer zijn
+    const extraTotaal = extraPosten
+      .filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""))
+      .reduce((sum, k, i) => sum + prijs(k.prijs_excl || 0, "extra_" + i), 0);
     const totaalExcl = subtotaal + extraTotaal;
     const totaalIncl = totaalExcl * 1.21;
     const totaalAlles = totaalIncl + (asbest ? 495 : 0);
@@ -233,14 +235,16 @@ export default function App() {
 
     const kostenHTML = zichtbarePosten.map(k => {
       const extra = rolluikExtra[k.origIndex] || 0;
-      const p = prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
-      const pIncl = p * 1.21;
+      const pIncl = (prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra) * 1.21;
       return "<tr><td style='padding:6px 10px'>- " + cleanTekst(k.omschrijving) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
     }).join("");
 
-    const extraHTML = extraPosten.map((k, i) => {
-      const p = prijs(k.prijs_excl || 0, "extra_" + i) * 1.21;
-      return "<tr><td style='padding:6px 10px'><strong>" + cleanTekst(k.omschrijving) + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(p) + "</td></tr>";
+    // Alleen extra posten die NIET inmeten/afvoer zijn tonen
+    const zichtbareExtraPosten = extraPosten.filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""));
+    const extraHTML = zichtbareExtraPosten.map((k, i) => {
+      const origIdx = extraPosten.indexOf(k);
+      const pIncl = prijs(k.prijs_excl || 0, "extra_" + origIdx) * 1.21;
+      return "<tr><td style='padding:6px 10px'><strong>" + cleanTekst(k.omschrijving) + "</strong></td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
     }).join("");
 
     const asbestHTML = asbest ? "<tr><td style='padding:6px 10px'><strong>Asbestinventarisatie</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px'>€ 495,00</td></tr>" : "";
@@ -407,6 +411,7 @@ td{padding:6px 10px;font-size:12px}
 
   const t = berekenTotalen();
   const { zichtbarePosten, rolluikExtra } = verwerkKosten();
+  const zichtbareExtraPosten = extraPosten.filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""));
   return (
     <div style={{ minHeight: "100vh", background: "#f7f7f7", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a1a2e" }}>
       <div style={{ background: "linear-gradient(135deg," + DARKRED + "," + RED + ")", color: "white", padding: "12px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 20px rgba(227,30,36,0.3)" }}>
@@ -485,13 +490,13 @@ td{padding:6px 10px;font-size:12px}
 
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 8 }}>Prijzen en Marge</div>
-              <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Alle prijzen incl. BTW voor klant. Marge (x1,2) aan of uit per post.</div>
+              <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Alle prijzen incl. BTW. Marge (x1,2) aan of uit per post.</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{cleanTekst((offerte.dakkapel_type || "SK Dakkapel").replace(/VH/g, "SK"))}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Dakkapel incl. kozijnen, montage, inmeten en afvoeren</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>Incl. kozijnen, montage, inmeten en afvoeren</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ textAlign: "right" }}>
@@ -522,8 +527,7 @@ td{padding:6px 10px;font-size:12px}
 
                 {zichtbarePosten.map(k => {
                   const extra = rolluikExtra[k.origIndex] || 0;
-                  const pExcl = prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra;
-                  const pIncl = pExcl * 1.21;
+                  const pIncl = (prijs(k.totaal_excl || 0, "kost_" + k.origIndex) + extra) * 1.21;
                   return (
                     <div key={k.origIndex} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
                       <div>
@@ -547,23 +551,27 @@ td{padding:6px 10px;font-size:12px}
                   <span>Subtotaal incl. BTW</span><span>{formatEur(t.subtotaal * 1.21)}</span>
                 </div>
 
-                {extraPosten.map((k, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{cleanTekst(k.omschrijving)}</div>
-                      <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 700, color: marges["extra_" + i] ? RED : "#333" }}>{formatEur(prijs(k.prijs_excl, "extra_" + i) * 1.21)}</div>
-                        <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
+                {zichtbareExtraPosten.map(k => {
+                  const origIdx = extraPosten.indexOf(k);
+                  const pIncl = prijs(k.prijs_excl || 0, "extra_" + origIdx) * 1.21;
+                  return (
+                    <div key={origIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{cleanTekst(k.omschrijving)}</div>
+                        <div style={{ fontSize: 11, color: "#aaa" }}>{k.aantal}x</div>
                       </div>
-                      <button onClick={() => setMarges(m => ({ ...m, ["extra_" + i]: !m["extra_" + i] }))} style={{ background: marges["extra_" + i] ? RED : "#eee", color: marges["extra_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                        {marges["extra_" + i] ? "Marge AAN" : "Marge UIT"}
-                      </button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: 700, color: marges["extra_" + origIdx] ? RED : "#333" }}>{formatEur(pIncl)}</div>
+                          <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
+                        </div>
+                        <button onClick={() => setMarges(m => ({ ...m, ["extra_" + origIdx]: !m["extra_" + origIdx] }))} style={{ background: marges["extra_" + origIdx] ? RED : "#eee", color: marges["extra_" + origIdx] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {marges["extra_" + origIdx] ? "Marge AAN" : "Marge UIT"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 <div onClick={() => setAsbest(a => !a)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: asbest ? "#fff5f5" : "#fafafa", borderRadius: 10, border: asbest ? "1px solid #f5c6c6" : "1px solid #eee", cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -579,8 +587,7 @@ td{padding:6px 10px;font-size:12px}
             </div>
 
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 16 }}>Totaaloverzicht</div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "2px solid " + RED, fontWeight: 800, fontSize: 18, color: RED }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", fontWeight: 800, fontSize: 18, color: RED }}>
                 <span>Totaal incl. BTW</span><span>{formatEur(t.totaalAlles)}</span>
               </div>
             </div>
