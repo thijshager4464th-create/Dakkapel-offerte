@@ -199,9 +199,11 @@ export default function App() {
       return sum + pm(k.totaal_excl || 0, "kost_" + i) + (rx[i] || 0);
     }, 0);
     const subtotaal = dakkapelTotaalExcl + kostenTotaal;
-    const extraTotaal = extraPosten
-      .filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""))
-      .reduce((sum, k, i) => sum + pm(k.prijs_excl || 0, "extra_" + i), 0);
+    const extraTotaal = extraPosten.reduce((sum, k, i) => {
+      const s = k.omschrijving || "";
+      if (isInmeten(s) || isAfvoer(s)) return sum;
+      return sum + pm(k.prijs_excl || 0, "extra_" + i);
+    }, 0);
     const totaalExcl = subtotaal + extraTotaal;
     const totaalIncl = totaalExcl * 1.21;
     const aanpassingTotaal = aanpassingen.reduce((sum, a) => sum + (parseFloat(a.bedrag) || 0), 0);
@@ -568,4 +570,4 @@ td{padding:6px 10px;font-size:12px}
       </div>
     </div>
   );
-            }
+}
