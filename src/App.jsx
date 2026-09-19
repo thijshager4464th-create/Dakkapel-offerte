@@ -37,6 +37,7 @@ function isRolluikOfScreen(s) { return /rolluik|zipscreen|screen|zonnescherm/i.t
 function isTripleGlasNul(k) { return /triple glas|hr\+\+\+/i.test(k.omschrijving) && Number(k.totaal_excl) === 0; }
 function isVentilatierooster(s) { return /ventilatierooster/i.test(s); }
 function isVerborgenInDakkapel(s) { return isMontageKozijn(s) || isInmeten(s) || isAfvoer(s); }
+function letterFor(i) { return String.fromCharCode(65 + i); }
 
 async function leesOffertePDF(base64) {
   const response = await fetch("/api/claude", {
@@ -59,11 +60,13 @@ REGELS:
 - adviseur_email = het schipperkozijnen.nl emailadres
 - adviseur_telefoon = het telefoonnummer bij het schipperkozijnen.nl emailadres
 - NIET de Van Hattem verkoper gebruiken als adviseur
+- dakkapellen = een array met ÉÉN object per dakkapel in de offerte. Een offerte kan 1 of meerdere dakkapellen bevatten (bijv. "Dakkapel 1 achterzijde" en "Dakkapel 2 achterzijde" zijn TWEE aparte objecten in deze array, elk met hun eigen prijs en eigen "Opties & overige")
 - dakkapel_naam = ALLEEN de korte productnaam zoals "VH Line Dakkapel" (geen positie erin)
 - dakkapel_positie = "achterzijde" of "voorzijde"
-- dakkapel_prijs_excl = het grote bedrag bij de dakkapel (NOOIT 0)
-- kostenposten = ALLE opties. Bedragen EXACT overnemen.
-- extra_posten = ALLE losse posten zoals transport, kraan, vergunning, brandstoftoeslag, technische tekening, technisch inmeten, afvoeren bouwafval etc.
+- dakkapel_prijs_excl = het grote bedrag bij DIE specifieke dakkapel (NOOIT 0)
+- kostenposten van een dakkapel = ALLEEN de opties die onder "Opties & overige" van DIE dakkapel staan. Bedragen EXACT overnemen.
+- zonwering, indeling, materialen van een dakkapel = alleen wat in de bijlage van DIE specifieke dakkapel staat (bijv. Bijlage A hoort bij dakkapel 1, Bijlage B bij dakkapel 2)
+- extra_posten = ALLE losse, offerte-brede posten die NIET bij één specifieke dakkapel horen, zoals: transport, kraan, vergunning, brandstoftoeslag, technische tekening, technisch inmeten, afvoeren bouwafval, meerprijs bijzonder transport etc.
 - Alle bedragen EXACT overnemen.
 
 {
@@ -77,22 +80,26 @@ REGELS:
   "montage_naam": "",
   "montage_adres": "",
   "montage_postcode_stad": "",
-  "dakkapel_naam": "",
-  "dakkapel_positie": "",
-  "dakkapel_uitvoering": "",
-  "dakkapel_breedte": "",
-  "dakkapel_hoogte": "",
-  "dakkapel_diepte": "",
-  "dakkapel_inzakmaat": "",
-  "dakkapel_hellingshoek": "",
-  "dakkapel_woonoppervlakte": "",
-  "dakkapel_overstek_voorkant": "",
-  "dakkapel_overstek_zijkant": "",
-  "dakkapel_prijs_excl": 0,
-  "zonwering": [{"kozijn": "", "type": "", "kleur": "", "geleiders": "", "aansluiting": ""}],
-  "indeling": [{"type": "", "breedte": "", "inhoud": []}],
-  "materialen": [{"onderdeel": "", "materiaal": "", "kleur": ""}],
-  "kostenposten": [{"omschrijving": "", "aantal": 1, "totaal_excl": 0}],
+  "dakkapellen": [
+    {
+      "dakkapel_naam": "",
+      "dakkapel_positie": "",
+      "dakkapel_uitvoering": "",
+      "dakkapel_breedte": "",
+      "dakkapel_hoogte": "",
+      "dakkapel_diepte": "",
+      "dakkapel_inzakmaat": "",
+      "dakkapel_hellingshoek": "",
+      "dakkapel_woonoppervlakte": "",
+      "dakkapel_overstek_voorkant": "",
+      "dakkapel_overstek_zijkant": "",
+      "dakkapel_prijs_excl": 0,
+      "zonwering": [{"kozijn": "", "type": "", "kleur": "", "geleiders": "", "aansluiting": ""}],
+      "indeling": [{"type": "", "breedte": "", "inhoud": []}],
+      "materialen": [{"onderdeel": "", "materiaal": "", "kleur": ""}],
+      "kostenposten": [{"omschrijving": "", "aantal": 1, "totaal_excl": 0}]
+    }
+  ],
   "extra_posten": [{"omschrijving": "", "aantal": 1, "prijs_excl": 0}]
 }`
           }
@@ -118,8 +125,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [offerte, setOfferte] = useState(null);
   const [marges, setMarges] = useState({});
-  const [kozijnenPost, setKozijnenPost] = useState("");
-  const [kozijnenMarge, setKozijnenMarge] = useState(false);
+  const [kozijnenPosten, setKozijnenPosten] = useState([]);
+  const [kozijnenMarges, setKozijnenMarges] = useState([]);
   const [extraPosten, setExtraPosten] = useState([]);
   const [eigProjNr, setEigProjNr] = useState("");
   const [versie, setVersie] = useState("1");
@@ -142,17 +149,20 @@ export default function App() {
       });
       const data = await leesOffertePDF(base64);
       setOfferte(data);
+      const daks = data.dakkapellen || [];
       const initMarges = {};
-      if (data.kostenposten) data.kostenposten.forEach((_, i) => { initMarges["kost_" + i] = false; });
+      daks.forEach((dak, di) => {
+        initMarges["dak" + di + "_dakkapel"] = false;
+        (dak.kostenposten || []).forEach((_, i) => { initMarges["dak" + di + "_kost_" + i] = false; });
+      });
       if (data.extra_posten) data.extra_posten.forEach((_, i) => { initMarges["extra_" + i] = false; });
-      initMarges["dakkapel"] = false;
       setMarges(initMarges);
+      setKozijnenPosten(daks.map(() => ""));
+      setKozijnenMarges(daks.map(() => false));
       setExtraPosten(data.extra_posten || []);
       setEigProjNr(data.projectnummer || "");
       setVersie("1");
       setAsbest(false);
-      setKozijnenPost("");
-      setKozijnenMarge(false);
       setDocumentType("offerte");
       setAanpassingen([{ omschrijving: "", bedrag: "", zichtbaar: true }]);
       setStap("preview");
@@ -164,64 +174,67 @@ export default function App() {
   };
 
   const pm = (bedrag, key) => marges[key] ? bedrag * 1.2 : bedrag;
-  const kozijnenInclBTW = kozijnenMarge ? (parseFloat(kozijnenPost) || 0) * 1.2 : (parseFloat(kozijnenPost) || 0);
-  const kozijnenExclBTW = kozijnenInclBTW / 1.21;
 
-  const getRolluikExtra = () => {
-    if (!offerte) return {};
+  // Rolluik-voorbereidingskosten die bij een specifiek rolluik/screen item van DEZELFDE dakkapel horen
+  const getRolluikExtra = (dak, di) => {
     const rx = {};
-    (offerte.kostenposten || []).forEach((k, i) => {
+    (dak.kostenposten || []).forEach((k, i) => {
       if (isVoorbereidingRolluik(k.omschrijving || "")) {
-        const ri = (offerte.kostenposten || []).findIndex((r, j) => j !== i && isRolluikOfScreen(r.omschrijving || ""));
-        if (ri >= 0) rx[ri] = (rx[ri] || 0) + pm(k.totaal_excl || 0, "kost_" + i);
+        const ri = (dak.kostenposten || []).findIndex((r, j) => j !== i && isRolluikOfScreen(r.omschrijving || ""));
+        if (ri >= 0) rx[ri] = (rx[ri] || 0) + pm(k.totaal_excl || 0, "dak" + di + "_kost_" + i);
       }
     });
     return rx;
   };
 
   const berekenTotalen = () => {
-    if (!offerte) return { dakkapelTotaalExcl: 0, subtotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
-    const rx = getRolluikExtra();
-    let verborgenExcl = 0;
-    (offerte.kostenposten || []).forEach((k, i) => {
-      const s = k.omschrijving || "";
-      if (isVerborgenInDakkapel(s)) { verborgenExcl += pm(k.totaal_excl || 0, "kost_" + i); return; }
-      if (isVoorbereidingRolluik(s)) {
-        const ri = (offerte.kostenposten || []).findIndex((r, j) => j !== i && isRolluikOfScreen(r.omschrijving || ""));
-        if (ri < 0) verborgenExcl += pm(k.totaal_excl || 0, "kost_" + i);
-      }
+    if (!offerte) return { dakkapellen: [], dakSubtotaalSom: 0, extraTotaal: 0, totaalExcl: 0, totaalIncl: 0, totaalAlles: 0 };
+    const daks = offerte.dakkapellen || [];
+
+    const dakResultaten = daks.map((dak, di) => {
+      const rx = getRolluikExtra(dak, di);
+      let verborgenExcl = 0;
+      (dak.kostenposten || []).forEach((k, i) => {
+        const s = k.omschrijving || "";
+        const key = "dak" + di + "_kost_" + i;
+        if (isVerborgenInDakkapel(s)) { verborgenExcl += pm(k.totaal_excl || 0, key); return; }
+        if (isVoorbereidingRolluik(s)) {
+          const ri = (dak.kostenposten || []).findIndex((r, j) => j !== i && isRolluikOfScreen(r.omschrijving || ""));
+          if (ri < 0) verborgenExcl += pm(k.totaal_excl || 0, key);
+        }
+      });
+      const kozijnenPostVal = parseFloat(kozijnenPosten[di]) || 0;
+      const kozijnenInclBTW = kozijnenMarges[di] ? kozijnenPostVal * 1.2 : kozijnenPostVal;
+      const kozijnenExclBTW = kozijnenInclBTW / 1.21;
+      const dakkapelTotaalExcl = pm(dak.dakkapel_prijs_excl || 0, "dak" + di + "_dakkapel") + verborgenExcl + kozijnenExclBTW;
+      const kostenTotaal = (dak.kostenposten || []).reduce((sum, k, i) => {
+        const s = k.omschrijving || "";
+        const key = "dak" + di + "_kost_" + i;
+        if (isTripleGlasNul(k) || isVentilatierooster(s) || isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s)) return sum;
+        return sum + pm(k.totaal_excl || 0, key) + (rx[i] || 0);
+      }, 0);
+      const subtotaal = dakkapelTotaalExcl + kostenTotaal;
+      return { dakkapelTotaalExcl, kostenTotaal, subtotaal, rx, kozijnenExclBTW };
     });
-    (offerte.extra_posten || []).forEach((k, i) => {
-      const s = k.omschrijving || "";
-      if (isInmeten(s) || isAfvoer(s)) verborgenExcl += pm(k.prijs_excl || 0, "extra_" + i);
-    });
-    const dakkapelTotaalExcl = pm(offerte.dakkapel_prijs_excl || 0, "dakkapel") + verborgenExcl + kozijnenExclBTW;
-    const kostenTotaal = (offerte.kostenposten || []).reduce((sum, k, i) => {
-      const s = k.omschrijving || "";
-      if (isTripleGlasNul(k) || isVentilatierooster(s) || isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s)) return sum;
-      return sum + pm(k.totaal_excl || 0, "kost_" + i) + (rx[i] || 0);
-    }, 0);
-    const subtotaal = dakkapelTotaalExcl + kostenTotaal;
+
+    const dakSubtotaalSom = dakResultaten.reduce((s, d) => s + d.subtotaal, 0);
     const extraTotaal = extraPosten.reduce((sum, k, i) => {
       const s = k.omschrijving || "";
       if (isInmeten(s) || isAfvoer(s)) return sum;
       return sum + pm(k.prijs_excl || 0, "extra_" + i);
     }, 0);
-    const totaalExcl = subtotaal + extraTotaal;
+    const totaalExcl = dakSubtotaalSom + extraTotaal;
     const totaalIncl = totaalExcl * 1.21;
     const aanpassingTotaal = aanpassingen.reduce((sum, a) => sum + (parseFloat(a.bedrag) || 0), 0);
     const totaalAlles = totaalIncl + (asbest ? 495 : 0) + aanpassingTotaal;
-    return { dakkapelTotaalExcl, kostenTotaal, subtotaal, extraTotaal, totaalExcl, totaalIncl, totaalAlles };
+    return { dakkapellen: dakResultaten, dakSubtotaalSom, extraTotaal, totaalExcl, totaalIncl, totaalAlles };
   };
+
   const printOfferte = () => {
     const t = berekenTotalen();
     const o = offerte;
-    const rx = getRolluikExtra();
+    const daks = o.dakkapellen || [];
     const adviseurNaam = ((o.adviseur_voornaam || "") + " " + (o.adviseur_achternaam || "")).trim();
-    const positie = o.dakkapel_positie || "achterzijde";
-    const dakkapelNaam = "Dakkapel " + positie + " - " + cleanDakkapelNaam(o.dakkapel_naam || "SK Line Dakkapel");
-    const bxh = (o.dakkapel_breedte && o.dakkapel_hoogte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm" : "";
-    const bxhxd = (o.dakkapel_breedte && o.dakkapel_hoogte && o.dakkapel_diepte) ? o.dakkapel_breedte + " mm x " + o.dakkapel_hoogte + " mm x " + o.dakkapel_diepte + " mm" : bxh;
     const projNrTonen = eigProjNr || o.referentie || o.projectnummer || "";
     const docTitel = documentType === "orderbevestiging" ? "Orderbevestiging" : documentType === "inmeten" ? "Offerte na Inmeten" : "Dakkapel Specificatie";
     const docStempel = documentType === "orderbevestiging"
@@ -230,11 +243,22 @@ export default function App() {
       ? "<div style='position:fixed;top:80px;right:30px;border:4px solid #E31E24;color:#E31E24;padding:12px 20px;font-size:16px;font-weight:800;transform:rotate(-15deg);opacity:0.6;border-radius:4px;pointer-events:none'>NA INMETEN</div>"
       : "";
 
-    const kostenHTML = (o.kostenposten || []).map((k, i) => {
-      const s = k.omschrijving || "";
-      if (isTripleGlasNul(k) || isVentilatierooster(s) || isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s)) return "";
-      const pIncl = (pm(k.totaal_excl || 0, "kost_" + i) + (rx[i] || 0)) * 1.21;
-      return "<tr><td style='padding:6px 10px'>- " + cleanTekst(s) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
+    // Per-dakkapel dakbox + kostenposten tabel (met subtotaal)
+    const dakkapelBlokkenHTML = daks.map((dak, di) => {
+      const dt = t.dakkapellen[di] || { dakkapelTotaalExcl: 0, subtotaal: 0, rx: {} };
+      const positie = dak.dakkapel_positie || "achterzijde";
+      const dakkapelNaam = "Dakkapel " + (di + 1) + " " + positie + " - " + cleanDakkapelNaam(dak.dakkapel_naam || "SK Line Dakkapel");
+      const bxh = (dak.dakkapel_breedte && dak.dakkapel_hoogte) ? dak.dakkapel_breedte + " mm x " + dak.dakkapel_hoogte + " mm" : "";
+
+      const kostenHTML = (dak.kostenposten || []).map((k, i) => {
+        const s = k.omschrijving || "";
+        if (isTripleGlasNul(k) || isVentilatierooster(s) || isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s)) return "";
+        const pIncl = (pm(k.totaal_excl || 0, "dak" + di + "_kost_" + i) + (dt.rx[i] || 0)) * 1.21;
+        return "<tr><td style='padding:6px 10px'>- " + cleanTekst(s) + "</td><td style='text-align:right;padding:6px 10px'>" + k.aantal + "x</td><td style='text-align:right;padding:6px 10px'>" + formatEur(pIncl) + "</td></tr>";
+      }).join("");
+
+      return `<div class="dakbox"><span class="dakprijs">${formatEur(dt.dakkapelTotaalExcl * 1.21)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(dt.dakkapelTotaalExcl * 1.21)}</span><h3>${dakkapelNaam}</h3><p>Uitvoering: ${dak.dakkapel_uitvoering || ""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${dak.dakkapel_hellingshoek || ""}<br>Extra woonoppervlakte: ${dak.dakkapel_woonoppervlakte || ""}</p></div>
+      <table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs incl. BTW</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal ${dakkapelNaam}</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(dt.subtotaal * 1.21)}</strong></td></tr></tbody></table>`;
     }).join("");
 
     const extraHTML = extraPosten
@@ -255,21 +279,6 @@ export default function App() {
         return "<tr><td style='padding:6px 10px'><strong>" + a.omschrijving + "</strong></td><td style='text-align:right;padding:6px 10px'>1x</td><td style='text-align:right;padding:6px 10px;" + kleur + "'>" + formatEur(b) + "</td></tr>";
       }).join("");
 
-    const zonweringHTML = (o.zonwering || []).map(z =>
-      "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + cleanTekst(z.type) + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
-    ).join("");
-
-    const indelingHTML = (o.indeling || []).map(k => {
-      const inhoudHTML = (k.inhoud || [])
-        .filter(item => !isVentilatierooster(item) && cleanTekst(item) !== "")
-        .map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.8'>- " + cleanTekst(item) + "</div>").join("");
-      return "<div style='margin-bottom:16px;padding-bottom:50px;border-bottom:1px dashed #eee'><div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px'><strong style='font-size:12px'>" + cleanTekst(k.type) + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
-    }).join("");
-
-    const materialenHTML = (o.materialen || []).map(m =>
-      "<tr><td style='padding:4px 8px 4px 0;font-size:11px;width:30%;vertical-align:top'>" + m.onderdeel + "</td><td style='padding:4px 8px;font-size:11px;width:44%;vertical-align:top'>" + m.materiaal + "</td><td style='padding:4px 0;font-size:11px;width:26%;vertical-align:top'>" + m.kleur + "</td></tr>"
-    ).join("");
-
     const win = window.open("", "_blank");
     win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>${docTitel} - ${projNrTonen} v${versie}</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -284,7 +293,7 @@ body{font-family:'Segoe UI',sans-serif;padding:36px 40px;font-size:12px;color:#1
 .redline{height:3px;background:#E31E24;margin-bottom:16px}
 .montage{background:#fff5f5;border-left:4px solid #E31E24;padding:10px 14px;margin-bottom:16px;border-radius:0 6px 6px 0}
 .montage h3{font-size:9px;color:#E31E24;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px}
-.dakbox{background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:12px 16px;margin-bottom:16px;overflow:hidden}
+.dakbox{background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:12px 16px;margin-bottom:0;overflow:hidden}
 .dakbox h3{font-size:13px;font-weight:700;margin-bottom:3px}
 .dakbox p{font-size:11px;color:#666;line-height:1.6}
 .dakprijs{float:right;font-weight:700;font-size:13px}
@@ -315,15 +324,36 @@ td{padding:6px 10px;font-size:12px}
     win.document.write(`<div class="header"><div><img src="https://subsidie-adviseur.vercel.app/images.png" class="logo"/><div class="klantbox"><strong>${docTitel}</strong><br>T.a.v. ${o.montage_naam||""}<br>${o.montage_adres||""}<br>${o.montage_postcode_stad||""}</div></div><div class="header-right"><span class="projnr">Projectnummer: ${projNrTonen}<span class="versie">v${versie}</span></span>Datum: ${o.datum||""}<span class="adviseur-label">Uw adviseur bij Schipper Kozijnen:</span><strong>${adviseurNaam}</strong><br>${o.adviseur_email||""}<br>${o.adviseur_telefoon||""}</div></div>`);
     win.document.write(`<div class="redline"></div>`);
     win.document.write(`<div class="montage"><h3>Montage adres</h3>${o.montage_naam||""}<br>${o.montage_adres||""}<br>${o.montage_postcode_stad||""}</div>`);
-    win.document.write(`<div class="dakbox"><span class="dakprijs">${formatEur(t.dakkapelTotaalExcl*1.21)}&nbsp;&nbsp;1x&nbsp;&nbsp;${formatEur(t.dakkapelTotaalExcl*1.21)}</span><h3>${dakkapelNaam}</h3><p>Uitvoering: ${o.dakkapel_uitvoering||""}<br>Afmetingen (BxH): ${bxh}<br>Hellingshoek: ${o.dakkapel_hellingshoek||""}<br>Extra woonoppervlakte: ${o.dakkapel_woonoppervlakte||""}</p></div>`);
-    win.document.write(`<table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs incl. BTW</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(t.subtotaal*1.21)}</strong></td></tr></tbody></table>`);
+    win.document.write(dakkapelBlokkenHTML);
     win.document.write(`<table><tbody>${extraHTML}${asbestHTML}${aanpassingHTML}</tbody></table>`);
     win.document.write(`<table class="totaal-tabel"><tbody><tr class="totaal-row"><td><strong>Totaal incl. BTW</strong></td><td style="text-align:right"><strong>${formatEur(t.totaalAlles)}</strong></td></tr></tbody></table>`);
-    win.document.write(`<div class="info">Dakkapel wordt zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% BTW.</div>`);
+    win.document.write(`<div class="info">Dakkapel(len) worden zonder binnen afwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% BTW.</div>`);
 
-    win.document.write(`<div class="bijlage"><div class="bij-header"><h2>Bijlage A: Toelichting Dakkapel ${positie}</h2><img src="https://subsidie-adviseur.vercel.app/images.png"/></div><div class="bij-grid"><div><span class="bij-label">Schipper Dakkapel</span><p style="font-size:11px;color:#333;line-height:1.8;margin-bottom:6px">Een kwaliteitsproduct naar uw wens samengesteld.</p><p style="font-size:11px;color:#333;line-height:1.8"><strong>Uitstraling:</strong> ${o.dakkapel_uitvoering||""}<br><strong>Afmetingen (BxHxD):</strong> ${bxhxd}<br><strong>Inzakmaat (incl. 10mm speling):</strong> ${o.dakkapel_inzakmaat||""}<br><strong>Hellingshoek:</strong> ${o.dakkapel_hellingshoek||""}<br><strong>Positie op de woning:</strong> ${positie}<br><strong>Vergunningsplichtig:</strong> Nee<br><strong>Extra woonoppervlakte:</strong> ${o.dakkapel_woonoppervlakte||""}<br><strong>Overstek boei voorkant:</strong> ${o.dakkapel_overstek_voorkant||"260 mm"}<br><strong>Overstek boei zijkant:</strong> ${o.dakkapel_overstek_zijkant||"150 mm"}</p><span class="bij-label">Zonwering</span><p style="font-size:10px;color:#444;margin-bottom:4px">De volgende zonwering is gekozen voor de dakkapel.</p>${zonweringHTML}<span class="bij-label">Materialen</span><p style="font-size:10px;color:#444;margin-bottom:4px">De volgende materialen gaan wij gebruiken voor de dakkapel</p><table class="mat-table"><tbody>${materialenHTML}</tbody></table></div><div><span class="bij-label">Indeling</span><p style="font-size:10px;color:#444;margin-bottom:4px">De volgende indeling is gekozen voor de dakkapel, van buitenaf gezien, van links naar rechts</p><p style="font-size:10px;color:#888;font-style:italic;margin-bottom:10px">Zie kozijn omschrijving voor verdere specificaties per kozijn.</p>${indelingHTML}</div></div><span class="bij-label">Impressie dakkapel</span><p style="font-size:10px;color:#888;margin-bottom:6px">De afbeeldingen zijn een impressie van de dakkapel en kunnen afwijken van de werkelijkheid.</p><div class="foto-grid"><div class="foto-box">Foto voorzijde<br>hier invoegen</div><div class="foto-box">Foto zijaanzicht<br>hier invoegen</div></div></div>`);
+    // Eén bijlage per dakkapel (A, B, ...), daarna de algemene voorwaarden als laatste letter
+    daks.forEach((dak, di) => {
+      const positie = dak.dakkapel_positie || "achterzijde";
+      const bxh = (dak.dakkapel_breedte && dak.dakkapel_hoogte) ? dak.dakkapel_breedte + " mm x " + dak.dakkapel_hoogte + " mm" : "";
+      const bxhxd = (dak.dakkapel_breedte && dak.dakkapel_hoogte && dak.dakkapel_diepte) ? dak.dakkapel_breedte + " mm x " + dak.dakkapel_hoogte + " mm x " + dak.dakkapel_diepte + " mm" : bxh;
 
-    win.document.write(`<div class="bijlage"><div class="bij-header"><h2>Bijlage B: Algemene voorwaarden</h2><img src="https://subsidie-adviseur.vercel.app/images.png"/></div><div class="av-intro">Schipper Kozijnen bouwt zijn kapellen volgens hoge kwaliteitsnormen: Uitsluitend A-merken van Nederlands fabricaat - Balken in het dak geplaatst om de 30 cm, hoogste norm - Isolatiewaarde van Rc 6,3 in het dak en Rc 4,7 in de zijwangen - EPDM dakbedekking - Kozijnen zijn rondom vleugel en kozijn doorboord voor staalbevestiging - Standaard HR++ glas - Kunststof kozijnen en draaikiepramen, naar binnen draaiend, met Politie keurmerk. Naast kwaliteit en uitstraling hechten wij vooral veel waarde aan goede service en snelle levertijden. Onze dakkapellen worden geheel volgens uw wens in de fabriek prefab geproduceerd en daarmee bent u verzekerd van een hoogwaardig kwaliteitsproduct. Voorafgaand aan de productie en plaatsing komt onze specialist alles ter plekke technisch inmeten.</div><div class="av-title">Kraan gerelateerde vergunningen en maatregelen:</div><div class="av-text">I.v.m. de veiligheid en bereikbaarheid tijdens het plaatsen van de dakkapellen d.m.v. een hijskraan moeten we in de meeste situaties de gemeente op de hoogte brengen d.m.v. een melding of soms een vergunning. In enkele gevallen moet het kraanbedrijf dit doen. Het kraanbedrijf neemt afhankelijk van de situatie (soms in overleg met uw gemeente) verkeersmaatregelen (wel of niet zichtbaar) omdat deze essentieel zijn voor een ongestoorde en veilige uitvoering van de werkzaamheden. Ook om te voorkomen dat u of de machinist in ongewenste situaties komen, vindt het kraanbedrijf het belangrijk dat deze zaken goed zijn geregeld. Deze externe kosten worden na plaatsing aan u doorberekend.</div><div class="av-title">Oplevering:</div><div class="av-text">Uw dakkapel wordt geleverd en geplaatst onder voorbehoud van de weersomstandigheden op een nader te bepalen datum. Uw dakkapel wordt casco (zonder binnenafwerking) opgeleverd en elektra zult u zelf (of een installateur) moeten aansluiten.</div></div>`);
+      const zonweringHTML = (dak.zonwering || []).map(z =>
+        "<p style='margin-bottom:8px'><strong style='font-size:11px'>" + cleanTekst(z.type) + " - " + z.kozijn + "</strong><br><em style='font-size:10px;color:#666'>Kleur: " + z.kleur + " | Kleur geleiders: " + z.geleiders + " | Aansluiting vanaf buitenzijde: " + z.aansluiting + "</em></p>"
+      ).join("");
+
+      const indelingHTML = (dak.indeling || []).map(k => {
+        const inhoudHTML = (k.inhoud || [])
+          .filter(item => !isVentilatierooster(item) && cleanTekst(item) !== "")
+          .map(item => "<div style='font-size:11px;color:#555;padding-left:6px;line-height:1.8'>- " + cleanTekst(item) + "</div>").join("");
+        return "<div style='margin-bottom:16px;padding-bottom:50px;border-bottom:1px dashed #eee'><div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px'><strong style='font-size:12px'>" + cleanTekst(k.type) + "</strong><strong style='font-size:12px'>" + k.breedte + "</strong></div>" + inhoudHTML + "</div>";
+      }).join("");
+
+      const materialenHTML = (dak.materialen || []).map(m =>
+        "<tr><td style='padding:4px 8px 4px 0;font-size:11px;width:30%;vertical-align:top'>" + m.onderdeel + "</td><td style='padding:4px 8px;font-size:11px;width:44%;vertical-align:top'>" + m.materiaal + "</td><td style='padding:4px 0;font-size:11px;width:26%;vertical-align:top'>" + m.kleur + "</td></tr>"
+      ).join("");
+
+      win.document.write(`<div class="bijlage"><div class="bij-header"><h2>Bijlage ${letterFor(di)}: Toelichting Dakkapel ${di + 1} ${positie}</h2><img src="https://subsidie-adviseur.vercel.app/images.png"/></div><div class="bij-grid"><div><span class="bij-label">Schipper Dakkapel</span><p style="font-size:11px;color:#333;line-height:1.8;margin-bottom:6px">Een kwaliteitsproduct naar uw wens samengesteld.</p><p style="font-size:11px;color:#333;line-height:1.8"><strong>Uitstraling:</strong> ${dak.dakkapel_uitvoering||""}<br><strong>Afmetingen (BxHxD):</strong> ${bxhxd}<br><strong>Inzakmaat (incl. 10mm speling):</strong> ${dak.dakkapel_inzakmaat||""}<br><strong>Hellingshoek:</strong> ${dak.dakkapel_hellingshoek||""}<br><strong>Positie op de woning:</strong> ${positie}<br><strong>Vergunningsplichtig:</strong> Nee<br><strong>Extra woonoppervlakte:</strong> ${dak.dakkapel_woonoppervlakte||""}<br><strong>Overstek boei voorkant:</strong> ${dak.dakkapel_overstek_voorkant||"260 mm"}<br><strong>Overstek boei zijkant:</strong> ${dak.dakkapel_overstek_zijkant||"150 mm"}</p><span class="bij-label">Zonwering</span><p style="font-size:10px;color:#444;margin-bottom:4px">De volgende zonwering is gekozen voor de dakkapel.</p>${zonweringHTML}<span class="bij-label">Materialen</span><p style="font-size:10px;color:#444;margin-bottom:4px">De volgende materialen gaan wij gebruiken voor de dakkapel</p><table class="mat-table"><tbody>${materialenHTML}</tbody></table></div><div><span class="bij-label">Indeling</span><p style="font-size:10px;color:#444;margin-bottom:4px">De volgende indeling is gekozen voor de dakkapel, van buitenaf gezien, van links naar rechts</p><p style="font-size:10px;color:#888;font-style:italic;margin-bottom:10px">Zie kozijn omschrijving voor verdere specificaties per kozijn.</p>${indelingHTML}</div></div><span class="bij-label">Impressie dakkapel</span><p style="font-size:10px;color:#888;margin-bottom:6px">De afbeeldingen zijn een impressie van de dakkapel en kunnen afwijken van de werkelijkheid.</p><div class="foto-grid"><div class="foto-box">Foto voorzijde<br>hier invoegen</div><div class="foto-box">Foto zijaanzicht<br>hier invoegen</div></div></div>`);
+    });
+
+    win.document.write(`<div class="bijlage"><div class="bij-header"><h2>Bijlage ${letterFor(daks.length)}: Algemene voorwaarden</h2><img src="https://subsidie-adviseur.vercel.app/images.png"/></div><div class="av-intro">Schipper Kozijnen bouwt zijn kapellen volgens hoge kwaliteitsnormen: Uitsluitend A-merken van Nederlands fabricaat - Balken in het dak geplaatst om de 30 cm, hoogste norm - Isolatiewaarde van Rc 6,3 in het dak en Rc 4,7 in de zijwangen - EPDM dakbedekking - Kozijnen zijn rondom vleugel en kozijn doorboord voor staalbevestiging - Standaard HR++ glas - Kunststof kozijnen en draaikiepramen, naar binnen draaiend, met Politie keurmerk. Naast kwaliteit en uitstraling hechten wij vooral veel waarde aan goede service en snelle levertijden. Onze dakkapellen worden geheel volgens uw wens in de fabriek prefab geproduceerd en daarmee bent u verzekerd van een hoogwaardig kwaliteitsproduct. Voorafgaand aan de productie en plaatsing komt onze specialist alles ter plekke technisch inmeten.</div><div class="av-title">Kraan gerelateerde vergunningen en maatregelen:</div><div class="av-text">I.v.m. de veiligheid en bereikbaarheid tijdens het plaatsen van de dakkapellen d.m.v. een hijskraan moeten we in de meeste situaties de gemeente op de hoogte brengen d.m.v. een melding of soms een vergunning. In enkele gevallen moet het kraanbedrijf dit doen. Het kraanbedrijf neemt afhankelijk van de situatie (soms in overleg met uw gemeente) verkeersmaatregelen (wel of niet zichtbaar) omdat deze essentieel zijn voor een ongestoorde en veilige uitvoering van de werkzaamheden. Ook om te voorkomen dat u of de machinist in ongewenste situaties komen, vindt het kraanbedrijf het belangrijk dat deze zaken goed zijn geregeld. Deze externe kosten worden na plaatsing aan u doorberekend.</div><div class="av-title">Oplevering:</div><div class="av-text">Uw dakkapel(len) worden geleverd en geplaatst onder voorbehoud van de weersomstandigheden op een nader te bepalen datum. Uw dakkapel(len) worden casco (zonder binnenafwerking) opgeleverd en elektra zult u zelf (of een installateur) moeten aansluiten.</div></div>`);
 
     win.document.write("</body></html>");
     win.document.close();
@@ -331,8 +361,8 @@ td{padding:6px 10px;font-size:12px}
   };
 
   const t = berekenTotalen();
-  const rx = getRolluikExtra();
-  const dakkapelNaamUI = offerte ? "Dakkapel " + (offerte.dakkapel_positie || "achterzijde") + " - " + cleanDakkapelNaam(offerte.dakkapel_naam || "SK Line Dakkapel") : "";
+  const daks = offerte ? (offerte.dakkapellen || []) : [];
+
   return (
     <div style={{ minHeight: "100vh", background: "#f7f7f7", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a1a2e" }}>
       <div style={{ background: "linear-gradient(135deg," + DARKRED + "," + RED + ")", color: "white", padding: "12px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 20px rgba(227,30,36,0.3)" }}>
@@ -357,7 +387,7 @@ td{padding:6px 10px;font-size:12px}
           <div style={{ background: "white", borderRadius: 16, padding: "48px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderTop: "4px solid " + RED }}>
             <img src="https://subsidie-adviseur.vercel.app/images.png" alt="Schipper Kozijnen" style={{ height: 60, marginBottom: 24 }} />
             <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, color: RED }}>Van Hattem Offerte Uploaden</h2>
-            <p style={{ color: "#888", fontSize: 14, marginBottom: 32 }}>Upload de PDF van Van Hattem en wij zetten hem automatisch om naar een Schipper Kozijnen offerte</p>
+            <p style={{ color: "#888", fontSize: 14, marginBottom: 32 }}>Upload de PDF van Van Hattem en wij zetten hem automatisch om naar een Schipper Kozijnen offerte. Offertes met meerdere dakkapellen worden automatisch herkend.</p>
             {error && <div style={{ background: "#fff0f0", border: "1px solid #f5c6c6", borderRadius: 10, padding: "12px 18px", color: "#c0392b", fontSize: 13, marginBottom: 20 }}>{error}</div>}
             {loading ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
@@ -411,76 +441,91 @@ td{padding:6px 10px;font-size:12px}
               </div>
             </div>
 
-            {/* PRIJZEN */}
-            <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 4 }}>Prijzen en Marge</div>
-              <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Gestreepte posten zijn verborgen in dakkapelprijs op PDF — marge wordt wel meegenomen.</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* PER-DAKKAPEL PRIJZEN EN MARGE */}
+            {daks.map((dak, di) => {
+              const dt = t.dakkapellen[di] || { subtotaal: 0, rx: {} };
+              const dakkapelNaamUI = "Dakkapel " + (di + 1) + " " + (dak.dakkapel_positie || "achterzijde") + " - " + cleanDakkapelNaam(dak.dakkapel_naam || "SK Line Dakkapel");
+              return (
+                <div key={di} style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 4 }}>{dakkapelNaamUI}</div>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Gestreepte posten zijn verborgen in dakkapelprijs op PDF — marge wordt wel meegenomen.</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
-                {/* DAKKAPEL */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{dakkapelNaamUI}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Dakkapel basisprijs</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 700, color: RED }}>{formatEur(pm(offerte.dakkapel_prijs_excl || 0, "dakkapel") * 1.21)}</div>
-                      <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
-                    </div>
-                    <button onClick={() => setMarges(m => ({ ...m, dakkapel: !m.dakkapel }))} style={{ background: marges["dakkapel"] ? RED : "#eee", color: marges["dakkapel"] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                      {marges["dakkapel"] ? "Marge AAN" : "Marge UIT"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* KOZIJNEN */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f0fff4", borderRadius: 10, border: "1px solid #a8e6c0" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>Schipper Kozijnen kozijnen</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>Incl. BTW — verborgen in dakkapelprijs op PDF</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 13, color: "#2D6A4F", fontWeight: 700 }}>€</span>
-                      <input type="number" min="0" value={kozijnenPost} onChange={e => setKozijnenPost(e.target.value)} placeholder="0.00" style={{ width: 90, padding: "5px 8px", border: "1.5px solid #2D6A4F", borderRadius: 6, fontSize: 13, textAlign: "right", outline: "none" }} />
-                    </div>
-                    <button onClick={() => setKozijnenMarge(m => !m)} style={{ background: kozijnenMarge ? RED : "#eee", color: kozijnenMarge ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                      {kozijnenMarge ? "Marge AAN" : "Marge UIT"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* KOSTENPOSTEN */}
-                {(offerte.kostenposten || []).map((k, i) => {
-                  const s = k.omschrijving || "";
-                  if (isTripleGlasNul(k) || isVentilatierooster(s)) return null;
-                  const isVerborgen = isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s);
-                  const extra = rx[i] || 0;
-                  const pIncl = (pm(k.totaal_excl || 0, "kost_" + i) + extra) * 1.21;
-                  return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: isVerborgen ? "#f5f5f5" : "#fafafa", borderRadius: 10, border: isVerborgen ? "1px dashed #ccc" : "1px solid #eee" }}>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: isVerborgen ? "#999" : "#1a1a2e" }}>{cleanTekst(s)}</div>
-                        <div style={{ fontSize: 11, color: "#bbb" }}>{k.aantal}x{isVerborgen ? " — verborgen in dakkapelprijs" : extra > 0 ? " (incl. voorbereiding)" : ""}</div>
+                    {/* DAKKAPEL BASISPRIJS */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff5f5", borderRadius: 10, border: "1px solid #f5c6c6" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{dakkapelNaamUI}</div>
+                        <div style={{ fontSize: 11, color: "#888" }}>Dakkapel basisprijs</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontWeight: 700, color: isVerborgen ? "#bbb" : marges["kost_" + i] ? RED : "#333" }}>{formatEur(pIncl)}</div>
-                          <div style={{ fontSize: 10, color: "#bbb" }}>incl. BTW</div>
+                          <div style={{ fontWeight: 700, color: RED }}>{formatEur(pm(dak.dakkapel_prijs_excl || 0, "dak" + di + "_dakkapel") * 1.21)}</div>
+                          <div style={{ fontSize: 10, color: "#aaa" }}>incl. BTW</div>
                         </div>
-                        <button onClick={() => setMarges(m => ({ ...m, ["kost_" + i]: !m["kost_" + i] }))} style={{ background: marges["kost_" + i] ? RED : "#eee", color: marges["kost_" + i] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {marges["kost_" + i] ? "Marge AAN" : "Marge UIT"}
+                        <button onClick={() => setMarges(m => ({ ...m, ["dak" + di + "_dakkapel"]: !m["dak" + di + "_dakkapel"] }))} style={{ background: marges["dak" + di + "_dakkapel"] ? RED : "#eee", color: marges["dak" + di + "_dakkapel"] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {marges["dak" + di + "_dakkapel"] ? "Marge AAN" : "Marge UIT"}
                         </button>
                       </div>
                     </div>
-                  );
-                })}
 
-                {/* SUBTOTAAL */}
-                <div style={{ padding: "10px 16px", background: "#f0f0f0", borderRadius: 10, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-                  <span>Subtotaal incl. BTW</span><span>{formatEur(t.subtotaal * 1.21)}</span>
+                    {/* KOZIJNEN VOOR DEZE DAKKAPEL */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f0fff4", borderRadius: 10, border: "1px solid #a8e6c0" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>Schipper Kozijnen kozijnen</div>
+                        <div style={{ fontSize: 11, color: "#888" }}>Incl. BTW — verborgen in dakkapelprijs op PDF</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 13, color: "#2D6A4F", fontWeight: 700 }}>€</span>
+                          <input type="number" min="0" value={kozijnenPosten[di] ?? ""} onChange={e => setKozijnenPosten(arr => arr.map((v, idx) => idx === di ? e.target.value : v))} placeholder="0.00" style={{ width: 90, padding: "5px 8px", border: "1.5px solid #2D6A4F", borderRadius: 6, fontSize: 13, textAlign: "right", outline: "none" }} />
+                        </div>
+                        <button onClick={() => setKozijnenMarges(arr => arr.map((v, idx) => idx === di ? !v : v))} style={{ background: kozijnenMarges[di] ? RED : "#eee", color: kozijnenMarges[di] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {kozijnenMarges[di] ? "Marge AAN" : "Marge UIT"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* KOSTENPOSTEN VAN DEZE DAKKAPEL */}
+                    {(dak.kostenposten || []).map((k, i) => {
+                      const s = k.omschrijving || "";
+                      if (isTripleGlasNul(k) || isVentilatierooster(s)) return null;
+                      const isVerborgen = isVerborgenInDakkapel(s) || isVoorbereidingRolluik(s);
+                      const key = "dak" + di + "_kost_" + i;
+                      const extra = dt.rx[i] || 0;
+                      const pIncl = (pm(k.totaal_excl || 0, key) + extra) * 1.21;
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: isVerborgen ? "#f5f5f5" : "#fafafa", borderRadius: 10, border: isVerborgen ? "1px dashed #ccc" : "1px solid #eee" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: isVerborgen ? "#999" : "#1a1a2e" }}>{cleanTekst(s)}</div>
+                            <div style={{ fontSize: 11, color: "#bbb" }}>{k.aantal}x{isVerborgen ? " — verborgen in dakkapelprijs" : extra > 0 ? " (incl. voorbereiding)" : ""}</div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontWeight: 700, color: isVerborgen ? "#bbb" : marges[key] ? RED : "#333" }}>{formatEur(pIncl)}</div>
+                              <div style={{ fontSize: 10, color: "#bbb" }}>incl. BTW</div>
+                            </div>
+                            <button onClick={() => setMarges(m => ({ ...m, [key]: !m[key] }))} style={{ background: marges[key] ? RED : "#eee", color: marges[key] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                              {marges[key] ? "Marge AAN" : "Marge UIT"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* SUBTOTAAL VAN DEZE DAKKAPEL */}
+                    <div style={{ padding: "10px 16px", background: "#f0f0f0", borderRadius: 10, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
+                      <span>Subtotaal {dakkapelNaamUI} incl. BTW</span><span>{formatEur(dt.subtotaal * 1.21)}</span>
+                    </div>
+                  </div>
                 </div>
+              );
+            })}
+
+            {/* GEDEELDE KOSTEN, ASBEST, AANPASSINGEN */}
+            <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 4 }}>Gedeelde kosten</div>
+              <div style={{ fontSize: 11, color: "#888", marginBottom: 16 }}>Deze posten horen niet bij één specifieke dakkapel en komen één keer op de offerte.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
                 {/* EXTRA POSTEN */}
                 {extraPosten.map((k, i) => {
