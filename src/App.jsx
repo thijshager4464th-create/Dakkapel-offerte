@@ -218,11 +218,12 @@ export default function App() {
     });
 
     const dakSubtotaalSom = dakResultaten.reduce((s, d) => s + d.subtotaal, 0);
+
+    // FIX: Technisch inmeten en Afvoeren bouwafval worden nu WEL meegeteld in het totaal
     const extraTotaal = extraPosten.reduce((sum, k, i) => {
-      const s = k.omschrijving || "";
-      if (isInmeten(s) || isAfvoer(s)) return sum;
       return sum + pm(k.prijs_excl || 0, "extra_" + i);
     }, 0);
+
     const totaalExcl = dakSubtotaalSom + extraTotaal;
     const totaalIncl = totaalExcl * 1.21;
     const aanpassingTotaal = aanpassingen.reduce((sum, a) => sum + (parseFloat(a.bedrag) || 0), 0);
@@ -261,8 +262,8 @@ export default function App() {
       <table><thead><tr><th>Opties en overige</th><th style="text-align:right">Aantal</th><th style="text-align:right">Prijs incl. BTW</th></tr></thead><tbody>${kostenHTML}<tr class="subtotaal-row"><td colspan="2"><strong>Subtotaal ${dakkapelNaam}</strong></td><td style="text-align:right;padding:8px 10px"><strong>${formatEur(dt.subtotaal * 1.21)}</strong></td></tr></tbody></table>`;
     }).join("");
 
+    // FIX: Technisch inmeten en Afvoeren bouwafval worden nu WEL getoond op de PDF
     const extraHTML = extraPosten
-      .filter(k => !isInmeten(k.omschrijving || "") && !isAfvoer(k.omschrijving || ""))
       .map(k => {
         const origIdx = extraPosten.indexOf(k);
         const pIncl = pm(k.prijs_excl || 0, "extra_" + origIdx) * 1.21;
