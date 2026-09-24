@@ -470,10 +470,15 @@ export default function App() {
       }));
       const somMm = indItems.reduce((s, k) => s + (k.mm || 0), 0);
       const stripOk = indItems.length > 0 && indItems.every(k => k.mm > 0) && somMm > 0;
-      const stripHTML = stripOk ? "<div class='strip'>" + indItems.map((k, i) =>
+      // Breedte van de tekening schaalt mee met de werkelijke kozijnbreedte (182mm content = ±6000mm werkelijk),
+      // zodat een smal kozijn niet over de hele paginabreedte wordt uitgerekt.
+      const stripBreedteMm = stripOk ? Math.min(182, Math.max(50, somMm * 0.03)) : 0;
+      const stripStijl = "style='width:" + stripBreedteMm + "mm;margin:8px auto 0'";
+      const stripMatenStijl = "style='width:" + stripBreedteMm + "mm;margin:3px auto 0'";
+      const stripHTML = stripOk ? "<div class='strip' " + stripStijl + ">" + indItems.map((k, i) =>
         "<div class='el " + (k.penant ? "penant" : "kozijn") + "' style='flex:" + k.mm + " 1 0'>" +
           (k.penant ? "<span>" + (i + 1) + "</span>" : (k.inhoud.length ? k.inhoud : [k.type]).map(v => "<div class='vak'>" + vakLabel(v) + "</div>").join("")) +
-        "</div>").join("") + "</div><div class='strip-maten'>" + indItems.map((k, i) =>
+        "</div>").join("") + "</div><div class='strip-maten' " + stripMatenStijl + ">" + indItems.map((k, i) =>
         "<div style='flex:" + k.mm + " 1 0'>" + (i + 1) + (k.mm / somMm >= 0.1 ? " · " + k.breedte : "") + "</div>").join("") + "</div>" : "";
       const indTabel = indItems.length ? "<table class='lijst'><colgroup><col style='width:34px'><col style='width:28%'><col><col class='c-prijs'></colgroup><thead><tr><th>#</th><th>Onderdeel</th><th>Uitvoering</th><th class='num'>Breedte</th></tr></thead><tbody>" +
         indItems.map((k, i) => rij(td(String(i + 1)) + td("<strong>" + k.type + "</strong>") + td(k.inhoud.join(" · ") || "—") + td(k.breedte, "num"), i)).join("") + "</tbody></table>" : "";
