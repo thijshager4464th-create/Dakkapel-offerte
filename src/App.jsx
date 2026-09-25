@@ -409,17 +409,19 @@ export default function App() {
         return rij(td(tekst) + td((k.aantal || 1) + "×", "num") + td(formatEur(pIncl), "num"), r++);
       }).join("");
 
-      const blok = `<div class="dak-blok">
-        <div class="thumb">${foto.klein ? "<img src='" + foto.klein + "' alt='Dakkapel'/>" : ""}</div>
-        <div>
-          <div class="dak-titel"><span>${dakNaam(dak, di)}</span></div>
-          <div class="specs">${specs}</div>
-          ${ralHTML}
-          <table class="lijst"><colgroup><col><col class="c-aantal"><col class="c-prijs"></colgroup>
-            <thead><tr><th>Opties en overige</th><th class="num">Aantal</th><th class="num">Incl. btw</th></tr></thead>
-            <tbody><tr class="basis">${td("Dakkapel " + c(cleanDakkapelNaam(dak.dakkapel_naam || "SK Line Dakkapel")))}${td("1×", "num")}${td(formatEur(dt.dakkapelTotaalExcl * 1.21), "num")}</tr>${kostenHTML}
-            <tr class="subtot"><td colspan="2">Subtotaal dakkapel ${di + 1}</td><td class="num">${formatEur(dt.subtotaal * 1.21)}</td></tr></tbody></table>
+      const blok = `<div class="dak">
+        <div class="dak-blok">
+          <div class="thumb">${foto.klein ? "<img src='" + foto.klein + "' alt='Dakkapel'/>" : ""}</div>
+          <div>
+            <div class="dak-titel"><span>${dakNaam(dak, di)}</span></div>
+            <div class="specs">${specs}</div>
+          </div>
         </div>
+        ${ralHTML}
+        <table class="lijst"><colgroup><col><col class="c-aantal"><col class="c-prijs"></colgroup>
+          <thead><tr><th>Opties en overige</th><th class="num">Aantal</th><th class="num">Incl. btw</th></tr></thead>
+          <tbody><tr class="basis">${td("Dakkapel " + c(cleanDakkapelNaam(dak.dakkapel_naam || "SK Line Dakkapel")))}${td("1×", "num")}${td(formatEur(dt.dakkapelTotaalExcl * 1.21), "num")}</tr>${kostenHTML}
+          <tr class="subtot"><td colspan="2">Subtotaal dakkapel ${di + 1}</td><td class="num">${formatEur(dt.subtotaal * 1.21)}</td></tr></tbody></table>
       </div>`;
       // Foto's onderaan de bijlage, alleen als ze zijn toegevoegd
       const fotosHTML = (foto.voor || foto.zij)
@@ -548,12 +550,12 @@ tr.subtot td{border-top:2px solid #1f2226;font-weight:600;padding-top:8px}
 .v{font-weight:500;display:flex;align-items:center;gap:6px}
 .fotos{display:grid;grid-template-columns:1fr 1fr;gap:12px;break-inside:avoid}
 .bijlage-fotos{margin-top:18px}.bijlage-fotos .foto{height:150px}
-.dak-blok{display:grid;grid-template-columns:34mm 1fr;gap:14px;margin:4px 0 18px}
+.dak{margin:4px 0 18px}
+.dak-blok{display:grid;grid-template-columns:34mm 1fr;gap:14px}
 .thumb{height:26mm;display:flex;align-items:flex-start;justify-content:center}
 .thumb img{max-width:100%;max-height:100%;object-fit:contain}
 .dak-blok .specs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin:6px 0 0}
-.dak-blok .ral{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin-top:10px}
-.dak-blok .lijst{margin-top:12px}
+
 .foto{height:200px;border:1px solid #e2e2e2;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden;padding:8px}
 .foto img{max-width:100%;max-height:100%;object-fit:contain}
 .foto.leeg{border:1.5px dashed #cdcdcd;color:#8a8a8a;font-size:10px;background:#fafafa}
