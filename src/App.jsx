@@ -277,7 +277,7 @@ export default function App() {
       setDocumentType("offerte");
       setAanpassingen([{ omschrijving: "", bedrag: "", zichtbaar: true }]);
       setRal(daks.map(() => leegRal()));
-      setFotos(daks.map(() => ({ voor: null, zij: null })));
+      setFotos(daks.map(() => ({ klein: null, voor: null, zij: null })));
       setStap("preview");
     } catch (err) {
       setError("Kon PDF niet lezen: " + err.message);
@@ -366,12 +366,6 @@ export default function App() {
     };
 
     // ---------- PAGINA 1: OVERZICHT ----------
-    let n = 0;
-    const dakRegels = daks.map((dak, di) => {
-      const dt = t.dakkapellen[di] || { subtotaal: 0 };
-      return rij(td(dakNaam(dak, di)) + td("1×", "num") + td(formatEur(dt.subtotaal * 1.21), "num"), n++);
-    }).join("");
-
     const overigRijen = [];
     extraPosten.forEach((k, i) => {
       overigRijen.push([c(k.omschrijving), (k.aantal || 1) + "×", formatEur(pm(k.prijs_excl || 0, "extra_" + i) * 1.21), ""]);
@@ -383,26 +377,9 @@ export default function App() {
 
     let m = 0;
     const overigHTML = overigRijen.length
-      ? "<tr class='groep'><td colspan='3'>Overige posten</td></tr>" + overigRijen.map(([oms, aantal, prijs, cls]) => rij(td(oms) + td(aantal, "num") + td(prijs, "num " + cls), m++)).join("")
+      ? "<table class='lijst'><colgroup><col><col class='c-aantal'><col class='c-prijs'></colgroup><thead><tr><th>Overige posten</th><th class='num'>Aantal</th><th class='num'>Incl. btw</th></tr></thead><tbody>" + overigRijen.map(([oms, aantal, prijs, cls]) => rij(td(oms) + td(aantal, "num") + td(prijs, "num " + cls), m++)).join("") + "</tbody></table>"
       : "";
 
-    const pagina1 = `<section class="pagina">
-      <div class="balk"></div>
-      <div class="head">
-        <img src="${LOGO}" class="logo" alt="Schipper Kozijnen"/>
-        <div class="head-r"><div class="doc">${docTitel}</div><div class="grijs">${projNrTonen} · versie ${versie}${o.datum ? " · " + o.datum : ""}</div>${stempel}</div>
-      </div>
-      <div class="info">
-        <div><div class="lbl">Klant en montageadres</div>${c(o.montage_naam)}<br>${c(o.montage_adres)}<br>${c(o.montage_postcode_stad)}</div>
-        <div><div class="lbl">Uw adviseur bij Schipper Kozijnen</div>${adviseurNaam}<br>${o.adviseur_email || ""}<br>${o.adviseur_telefoon || ""}</div>
-      </div>
-      <h2 class="sectie">Totaaloverzicht</h2>
-      <table class="lijst"><colgroup><col><col class="c-aantal"><col class="c-prijs"></colgroup>
-        <thead><tr><th>Omschrijving</th><th class="num">Aantal</th><th class="num">Incl. btw</th></tr></thead>
-        <tbody>${dakRegels}${overigHTML}</tbody></table>
-      <div class="totaal"><span>Totaal incl. 21% btw</span><span class="bedrag">${formatEur(t.totaalAlles)}</span></div>
-      <div class="noot">Dakkapel(len) worden zonder binnenafwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing van de dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% btw. De specificatie per dakkapel vindt u op de voorgaande pagina('s).</div>
-    </section>`;
 
     // ---------- PER DAKKAPEL: DETAILPAGINA + BIJLAGE ----------
     const dakPaginas = daks.map((dak, di) => {
@@ -432,18 +409,22 @@ export default function App() {
         return rij(td(tekst) + td((k.aantal || 1) + "×", "num") + td(formatEur(pIncl), "num"), r++);
       }).join("");
 
-      const detail = `<section class="pagina">
-        ${kop("Dakkapel " + (di + 1) + " · " + positie)}
-        <div class="dak-titel"><span>${dakNaam(dak, di)}</span><span>${formatEur(dt.dakkapelTotaalExcl * 1.21)}</span></div>
-        <div class="specs">${specs}</div>
-        <div class="fotos">${fotoVak(foto.voor, "Vooraanzicht")}${fotoVak(foto.zij, "Zijaanzicht")}</div>
-        <p class="hint">De afbeeldingen zijn een impressie van de dakkapel en kunnen afwijken van de werkelijkheid.</p>
-        ${ralHTML}
-        <table class="lijst"><colgroup><col><col class="c-aantal"><col class="c-prijs"></colgroup>
-          <thead><tr><th>Opties en overige</th><th class="num">Aantal</th><th class="num">Incl. btw</th></tr></thead>
-          <tbody><tr class="basis">${td("Dakkapel " + c(cleanDakkapelNaam(dak.dakkapel_naam || "SK Line Dakkapel")))}${td("1×", "num")}${td(formatEur(dt.dakkapelTotaalExcl * 1.21), "num")}</tr>${kostenHTML}
-          <tr class="subtot"><td colspan="2">Subtotaal dakkapel ${di + 1}</td><td class="num">${formatEur(dt.subtotaal * 1.21)}</td></tr></tbody></table>
-      </section>`;
+      const blok = `<div class="dak-blok">
+        <div class="thumb">${foto.klein ? "<img src='" + foto.klein + "' alt='Dakkapel'/>" : ""}</div>
+        <div>
+          <div class="dak-titel"><span>${dakNaam(dak, di)}</span></div>
+          <div class="specs">${specs}</div>
+          ${ralHTML}
+          <table class="lijst"><colgroup><col><col class="c-aantal"><col class="c-prijs"></colgroup>
+            <thead><tr><th>Opties en overige</th><th class="num">Aantal</th><th class="num">Incl. btw</th></tr></thead>
+            <tbody><tr class="basis">${td("Dakkapel " + c(cleanDakkapelNaam(dak.dakkapel_naam || "SK Line Dakkapel")))}${td("1×", "num")}${td(formatEur(dt.dakkapelTotaalExcl * 1.21), "num")}</tr>${kostenHTML}
+            <tr class="subtot"><td colspan="2">Subtotaal dakkapel ${di + 1}</td><td class="num">${formatEur(dt.subtotaal * 1.21)}</td></tr></tbody></table>
+        </div>
+      </div>`;
+      // Foto's onderaan de bijlage, alleen als ze zijn toegevoegd
+      const fotosHTML = (foto.voor || foto.zij)
+        ? "<div class='fotos bijlage-fotos'>" + fotoVak(foto.voor, "Vooraanzicht") + fotoVak(foto.zij, "Zijaanzicht") + "</div><p class='hint'>De afbeeldingen zijn een impressie van de dakkapel en kunnen afwijken van de werkelijkheid.</p>"
+        : "";
       // Bijlage: specificaties, zonwering, materialen, indeling
       const kv = [["Uitstraling", c(dak.dakkapel_uitvoering)], ["Afmetingen (b × h × d)", afm(dak, true)], ["Inzakmaat (incl. 10 mm speling)", metMm(dak.dakkapel_inzakmaat)], ["Hellingshoek", c(dak.dakkapel_hellingshoek)], ["Positie op de woning", positie], ["Vergunningsplichtig", "Nee"], ["Extra woonoppervlakte", c(dak.dakkapel_woonoppervlakte)], ["Overstek boei voorkant", metMm(dak.dakkapel_overstek_voorkant) || "260 mm"], ["Overstek boei zijkant", metMm(dak.dakkapel_overstek_zijkant) || "150 mm"]]
         .filter(([, v]) => v).map(([l, v], i) => rij(td(l, "l") + td(v), i)).join("");
@@ -489,10 +470,28 @@ export default function App() {
           <div>${matHTML.replace("class='kopje'", "class='kopje eerste'")}</div>
         </div>
         ${indHTML}
+        ${fotosHTML}
       </section>`;
 
-      return { detail, bijlage };
+      return { blok, bijlage };
     });
+
+    const pagina1 = `<section class="pagina">
+      <div class="balk"></div>
+      <div class="head">
+        <img src="${LOGO}" class="logo" alt="Schipper Kozijnen"/>
+        <div class="head-r"><div class="doc">${docTitel}</div><div class="grijs">${projNrTonen} · versie ${versie}${o.datum ? " · " + o.datum : ""}</div>${stempel}</div>
+      </div>
+      <div class="info">
+        <div><div class="lbl">Klant en montageadres</div>${c(o.montage_naam)}<br>${c(o.montage_adres)}<br>${c(o.montage_postcode_stad)}</div>
+        <div><div class="lbl">Uw adviseur bij Schipper Kozijnen</div>${adviseurNaam}<br>${o.adviseur_email || ""}<br>${o.adviseur_telefoon || ""}</div>
+      </div>
+      <h2 class="sectie">Totaaloverzicht</h2>
+      ${dakPaginas.map(p => p.blok).join("")}
+      ${overigHTML}
+      <div class="totaal"><span>Totaal incl. 21% btw</span><span class="bedrag">${formatEur(t.totaalAlles)}</span></div>
+      <div class="noot">Dakkapel(len) worden zonder binnenafwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing van de dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% btw. De technische specificatie per dakkapel vindt u in de bijlage.</div>
+    </section>`;
 
     // ---------- ALGEMENE VOORWAARDEN ----------
     const voorwaarden = `<section class="pagina">
@@ -548,6 +547,13 @@ tr.subtot td{border-top:2px solid #1f2226;font-weight:600;padding-top:8px}
 .l{font-size:10px;color:#595959}
 .v{font-weight:500;display:flex;align-items:center;gap:6px}
 .fotos{display:grid;grid-template-columns:1fr 1fr;gap:12px;break-inside:avoid}
+.bijlage-fotos{margin-top:18px}.bijlage-fotos .foto{height:150px}
+.dak-blok{display:grid;grid-template-columns:34mm 1fr;gap:14px;margin:4px 0 18px}
+.thumb{height:26mm;display:flex;align-items:flex-start;justify-content:center}
+.thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.dak-blok .specs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin:6px 0 0}
+.dak-blok .ral{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin-top:10px}
+.dak-blok .lijst{margin-top:12px}
 .foto{height:200px;border:1px solid #e2e2e2;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden;padding:8px}
 .foto img{max-width:100%;max-height:100%;object-fit:contain}
 .foto.leeg{border:1.5px dashed #cdcdcd;color:#8a8a8a;font-size:10px;background:#fafafa}
@@ -578,8 +584,8 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
 
     const win = window.open("", "_blank");
     win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>${docTitel} - ${projNrTonen} v${versie}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"><style>${css}</style></head><body>`);
-    // Volgorde: eerst de dakkapelpagina's, dan het totaaloverzicht, daarna de bijlagen en voorwaarden
-    win.document.write(dakPaginas.map(p => p.detail).join("") + pagina1 + dakPaginas.map(p => p.bijlage).join("") + voorwaarden);
+    // Volgorde: voorblad met klantgegevens, dakkapel(len) en totaal; daarna de bijlagen en voorwaarden
+    win.document.write(pagina1 + dakPaginas.map(p => p.bijlage).join("") + voorwaarden);
     win.document.write("</body></html>");
     win.document.close();
     const doPrint = () => { try { win.focus(); win.print(); } catch (e) { /* venster gesloten */ } };
@@ -782,12 +788,12 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
                     {/* FOTO'S DAKKAPEL */}
                     <div style={{ marginTop: 8, paddingTop: 14, borderTop: "2px dashed #eee" }}>
                       <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", marginBottom: 10 }}>Foto's dakkapel</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        {[["voor", "Vooraanzicht"], ["zij", "Zijaanzicht"]].map(([k, label]) => (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                        {[["klein", "Kleine foto voorblad"], ["voor", "Vooraanzicht"], ["zij", "Zijaanzicht"]].map(([k, label]) => (
                           <FotoVak key={k} label={label} src={(fotos[di] || {})[k]} onFile={file => setFoto(di, k, file)} onRemove={() => setFoto(di, k, null)} />
                         ))}
                       </div>
-                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>Zonder foto komt er een leeg kader op de PDF.</div>
+                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>De kleine foto komt naast de dakkapel op de eerste pagina. Vooraanzicht en zijaanzicht komen onderaan de bijlage; zonder foto's wordt dat deel weggelaten.</div>
                     </div>
                   </div>
                 </div>
