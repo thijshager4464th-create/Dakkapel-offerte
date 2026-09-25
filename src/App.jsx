@@ -401,7 +401,7 @@ export default function App() {
         <thead><tr><th>Omschrijving</th><th class="num">Aantal</th><th class="num">Incl. btw</th></tr></thead>
         <tbody>${dakRegels}${overigHTML}</tbody></table>
       <div class="totaal"><span>Totaal incl. 21% btw</span><span class="bedrag">${formatEur(t.totaalAlles)}</span></div>
-      <div class="noot">Dakkapel(len) worden zonder binnenafwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing van de dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% btw. De specificatie per dakkapel vindt u op de volgende pagina's.</div>
+      <div class="noot">Dakkapel(len) worden zonder binnenafwerking, casco opgeleverd.<br>Eventuele zonnepanelen dienen verwijderd te zijn voor plaatsing van de dakkapel(len).<br>Alle genoemde prijzen zijn inclusief 21% btw. De specificatie per dakkapel vindt u op de voorgaande pagina('s).</div>
     </section>`;
 
     // ---------- PER DAKKAPEL: DETAILPAGINA + BIJLAGE ----------
@@ -491,8 +491,8 @@ export default function App() {
         ${indHTML}
       </section>`;
 
-      return detail + bijlage;
-    }).join("");
+      return { detail, bijlage };
+    });
 
     // ---------- ALGEMENE VOORWAARDEN ----------
     const voorwaarden = `<section class="pagina">
@@ -578,7 +578,8 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
 
     const win = window.open("", "_blank");
     win.document.write(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><title>${docTitel} - ${projNrTonen} v${versie}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"><style>${css}</style></head><body>`);
-    win.document.write(pagina1 + dakPaginas + voorwaarden);
+    // Volgorde: eerst de dakkapelpagina's, dan het totaaloverzicht, daarna de bijlagen en voorwaarden
+    win.document.write(dakPaginas.map(p => p.detail).join("") + pagina1 + dakPaginas.map(p => p.bijlage).join("") + voorwaarden);
     win.document.write("</body></html>");
     win.document.close();
     const doPrint = () => { try { win.focus(); win.print(); } catch (e) { /* venster gesloten */ } };
