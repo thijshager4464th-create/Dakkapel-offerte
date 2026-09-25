@@ -227,7 +227,6 @@ export default function App() {
   const [offerte, setOfferte] = useState(null);
   const [marges, setMarges] = useState({});
   const [kozijnenPosten, setKozijnenPosten] = useState([]);
-  const [kozijnenMarges, setKozijnenMarges] = useState([]);
   const [extraPosten, setExtraPosten] = useState([]);
   const [eigProjNr, setEigProjNr] = useState("");
   const [versie, setVersie] = useState("1");
@@ -240,6 +239,7 @@ export default function App() {
   const fileRef = useRef();
 
   const leegRal = () => ({ kozijnBuiten: "", kozijnBinnen: "", draaiBuiten: "", draaiBinnen: "" });
+  const setProjectVeld = (veld, v) => setOfferte(o => ({ ...o, [veld]: v }));
   const setRalVeld = (di, veld, v) => setRal(arr => arr.map((r, i) => i === di ? { ...r, [veld]: v } : r));
   const kopieerRal = (di) => setRal(arr => arr.map((r, i) => i === di ? { ...arr[0] } : r));
   const setFoto = async (di, k, file) => {
@@ -270,7 +270,6 @@ export default function App() {
       if (data.extra_posten) data.extra_posten.forEach((_, i) => { initMarges["extra_" + i] = false; });
       setMarges(initMarges);
       setKozijnenPosten(daks.map(() => ""));
-      setKozijnenMarges(daks.map(() => false));
       setExtraPosten(data.extra_posten || []);
       setEigProjNr(data.projectnummer || "");
       setVersie("1");
@@ -318,8 +317,7 @@ export default function App() {
         }
       });
       const kozijnenPostVal = parseFloat(kozijnenPosten[di]) || 0;
-      const kozijnenInclBTW = kozijnenMarges[di] ? kozijnenPostVal * 1.2 : kozijnenPostVal;
-      const kozijnenExclBTW = kozijnenInclBTW / 1.21;
+      const kozijnenExclBTW = kozijnenPostVal / 1.21;
       const dakkapelTotaalExcl = pm(dak.dakkapel_prijs_excl || 0, "dak" + di + "_dakkapel") + verborgenExcl + kozijnenExclBTW;
       const kostenTotaal = (dak.kostenposten || []).reduce((sum, k, i) => {
         const s = k.omschrijving || "";
@@ -651,8 +649,11 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 12 }}>Projectgegevens</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: 13, marginBottom: 16 }}>
-                {[["Klant", offerte.montage_naam], ["Adres", offerte.montage_adres + " " + offerte.montage_postcode_stad], ["Datum", offerte.datum], ["Adviseur Schipper", ((offerte.adviseur_voornaam || "") + " " + (offerte.adviseur_achternaam || "")).trim()], ["VH Referentie", offerte.referentie || offerte.projectnummer]].map(([label, val]) => (
-                  <div key={label}><span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", display: "block", marginBottom: 2 }}>{label}</span><strong>{val}</strong></div>
+                {[["montage_naam", "Klant"], ["montage_adres", "Adres"], ["montage_postcode_stad", "Postcode en plaats"], ["datum", "Datum"], ["adviseur_voornaam", "Adviseur voornaam"], ["adviseur_achternaam", "Adviseur achternaam"], ["adviseur_email", "Adviseur e-mail"], ["adviseur_telefoon", "Adviseur telefoon"], ["referentie", "VH Referentie"]].map(([veld, label]) => (
+                  <div key={veld}>
+                    <label style={{ fontSize: 10, color: "#888", textTransform: "uppercase", display: "block", marginBottom: 2 }}>{label}</label>
+                    <input value={offerte[veld] ?? ""} onChange={e => setProjectVeld(veld, e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: "6px 8px", border: "1.5px solid #dde", borderRadius: 6, fontSize: 13, fontWeight: 600, outline: "none" }} />
+                  </div>
                 ))}
               </div>
               <div style={{ display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -716,9 +717,6 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
                           <span style={{ fontSize: 13, color: "#2D6A4F", fontWeight: 700 }}>€</span>
                           <input type="number" min="0" value={kozijnenPosten[di] ?? ""} onChange={e => setKozijnenPosten(arr => arr.map((v, idx) => idx === di ? e.target.value : v))} placeholder="0.00" style={{ width: 90, padding: "5px 8px", border: "1.5px solid #2D6A4F", borderRadius: 6, fontSize: 13, textAlign: "right", outline: "none" }} />
                         </div>
-                        <button onClick={() => setKozijnenMarges(arr => arr.map((v, idx) => idx === di ? !v : v))} style={{ background: kozijnenMarges[di] ? RED : "#eee", color: kozijnenMarges[di] ? "white" : "#666", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {kozijnenMarges[di] ? "Marge AAN" : "Marge UIT"}
-                        </button>
                       </div>
                     </div>
 
