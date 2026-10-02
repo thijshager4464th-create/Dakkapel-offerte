@@ -96,6 +96,9 @@ function leesAfbeeldingMetMaat(file) {
 
 const isPenant = (k) => /penant/i.test((k && k.type) || "");
 const PENANT_STANDAARD = "200";
+// Kozijnhoogte is altijd dakkapelhoogte − 300 mm
+const KOZIJN_HOOGTE_MIN = 300;
+const KOZIJN_MIN_DAK = 600;
 
 // Indeling uit de offerte opschonen: lege regels weg en een penant bijvoegen tussen twee kozijnen die direct naast elkaar staan
 function normaliseerIndeling(indeling) {
@@ -108,13 +111,14 @@ function normaliseerIndeling(indeling) {
   return uit;
 }
 
-// Indeling van een dakkapel met maten in werkelijke mm. De hoogte van een kozijn komt uit k.hoogte; een ingevulde
-// hoogte geldt ook voor kozijnen zonder hoogte (in één dakkapel meestal gelijk). Zonder hoogte schatten we die uit de
-// dakkapelhoogte, alleen voor de tekening (de tabel toont alleen ingevulde hoogtes).
+// Indeling van een dakkapel met maten in werkelijke mm. Kozijnhoogte = dakkapelhoogte − 300 mm (vaste regel), tenzij
+// er een hoogte is ingevuld; een ingevulde hoogte geldt ook voor kozijnen zonder hoogte. Zonder dakkapelhoogte
+// tekenen we met 1200 mm en tonen we die hoogte niet in de tabel.
 function indelingMaten(dak) {
-  const gedeeldeHoogte = mmGetal(((dak.indeling || []).find(k => k && !isPenant(k) && mmGetal(k.hoogte)) || {}).hoogte);
   const dakHoogte = mmGetal(dak.dakkapel_hoogte);
-  const geschatteHoogte = dakHoogte > 800 ? Math.round((dakHoogte - 300) / 10) * 10 : 1200;
+  const standaardHoogte = dakHoogte > KOZIJN_MIN_DAK ? dakHoogte - KOZIJN_HOOGTE_MIN : 0;
+  const gedeeldeHoogte = mmGetal(((dak.indeling || []).find(k => k && !isPenant(k) && mmGetal(k.hoogte)) || {}).hoogte) || standaardHoogte;
+  const geschatteHoogte = 1200;
   const items = (dak.indeling || []).map((k, i) => ({ k, i })).filter(({ k }) => k && (k.type || k.breedte)).map(({ k, i }) => {
     const penant = isPenant(k);
     const mm = mmGetal(k.breedte);
@@ -270,7 +274,7 @@ function KozijnIndeling({ dak, kleur, onChange }) {
   return (
     <div style={{ marginTop: 8, paddingTop: 14, borderTop: "2px dashed #eee" }}>
       <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", marginBottom: 4 }}>Indeling kozijnen</div>
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>Van buitenaf gezien, van links naar rechts. De kozijnen worden op schaal getekend in de dakkapelspecificatie, in de RAL-kleur van de kozijn buitenzijde. Vul de kozijnhoogte in; die geldt ook voor de andere kozijnen.</div>
+      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>Van buitenaf gezien, van links naar rechts. De kozijnen worden op schaal getekend in de dakkapelspecificatie, in de RAL-kleur van de kozijn buitenzijde. De kozijnhoogte is standaard de dakkapelhoogte − 300 mm; een afwijkende hoogte kun je invullen.</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "stretch" }}>
         {indeling.map((k, i) => isPenant(k) ? (
           <div key={i} style={{ width: 92, background: "#5b6166", color: "white", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, justifyContent: "center", fontSize: 11 }}>
@@ -304,7 +308,7 @@ function KozijnIndeling({ dak, kleur, onChange }) {
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>Voorbeeld op schaal, zoals in de dakkapelspecificatie</div>
           <div style={{ maxWidth: 560 }} dangerouslySetInnerHTML={{ __html: indelingSVG(maten, kleur) }} />
-          {maten.hoogteGeschat && <div style={{ fontSize: 11, color: "#b7791f", marginTop: 4 }}>Hoogte geschat op {maten.maxHoogteMm.toLocaleString("nl-NL")} mm (dakkapelhoogte − 300 mm). Vul de kozijnhoogte in voor een exacte tekening.</div>}
+          {maten.hoogteGeschat && <div style={{ fontSize: 11, color: "#b7791f", marginTop: 4 }}>Geen dakkapelhoogte bekend; getekend met 1.200 mm. Vul de kozijnhoogte in voor een exacte tekening.</div>}
         </div>
       ) : items.length > 0 && (
         <div style={{ fontSize: 11, color: RED, marginTop: 8 }}>Vul bij elk kozijn en penant een breedte in, anders kan de tekening niet op schaal in de PDF.</div>
