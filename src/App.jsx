@@ -183,15 +183,15 @@ function indelingSVG({ items, somMm, maxHoogteMm }, kleur) {
       }
       out.push(r(gx, gy, gw, gh, glas, 0.5));
       const streep = " fill='none' stroke='" + symbool + "' stroke-width='0.7' stroke-dasharray='5 3'";
-      // Symbolen: de punt wijst naar de scharnierkant. Draai: scharnier aan de buitenkant van het kozijn, kruk naar
-      // het midden. Kiep: scharnier onder.
+      // Symbolen zoals in Inzethor: de lijnen beginnen in de scharnierhoeken en de punt wijst naar de krukkant.
+      // Draai: scharnier aan de buitenkant van het kozijn, kruk naar het midden. Kiep: scharnieren onder, punt boven.
       const scharnierLinks = n === 1 ? true : j < n / 2;
       if (draai || deur) {
         const sx = scharnierLinks ? gx : gx + gw, kx = scharnierLinks ? gx + gw : gx;
-        out.push("<polyline points='" + kx + "," + gy + " " + sx + "," + (gy + gh / 2) + " " + kx + "," + (gy + gh) + "'" + streep + "/>");
+        out.push("<polyline points='" + sx + "," + gy + " " + kx + "," + (gy + gh / 2) + " " + sx + "," + (gy + gh) + "'" + streep + "/>");
       }
-      if (kiep) out.push("<polyline points='" + gx + "," + gy + " " + (gx + gw / 2) + "," + (gy + gh) + " " + (gx + gw) + "," + gy + "'" + streep + "/>");
-      if (gw > 34 && gh > 16) out.push(tekst(gx + gw / 2, gy + 12, esc(v), " font-size='8.5' fill='#3a3f44' style='paint-order:stroke' stroke='" + glas + "' stroke-width='3'"));
+      if (kiep) out.push("<polyline points='" + gx + "," + (gy + gh) + " " + (gx + gw / 2) + "," + gy + " " + (gx + gw) + "," + (gy + gh) + "'" + streep + "/>");
+      if (gw > 34 && gh > 16) out.push(tekst(gx + gw / 2, gy + gh - 6, esc(v), " font-size='8.5' fill='#3a3f44' style='paint-order:stroke' stroke='" + glas + "' stroke-width='3'"));
     });
     x += w;
   });
