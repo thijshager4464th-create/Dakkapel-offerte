@@ -469,7 +469,7 @@ export default function App() {
       setMarges(initMarges);
       setKozijnenPosten(daks.map(() => ""));
       setExtraPosten(data.extra_posten || []);
-      setEigProjNr(data.projectnummer || "");
+      setEigProjNr(data.referentie || "");
       setVersie("1");
       setAsbest(false);
       setDocumentType("offerte");
@@ -548,7 +548,7 @@ export default function App() {
     const c = (s) => cleanTekst(s == null ? "" : String(s));
     const LOGO = "https://subsidie-adviseur.vercel.app/images.png";
     const adviseurNaam = ((o.adviseur_voornaam || "") + " " + (o.adviseur_achternaam || "")).trim();
-    const projNrTonen = eigProjNr || o.referentie || o.projectnummer || "";
+    const projNrTonen = eigProjNr || o.referentie || "";
     const docTitel = documentType === "orderbevestiging" ? "Orderbevestiging" : documentType === "inmeten" ? "Offerte na Inmeten" : "Dakkapel Specificatie";
     const stempel = documentType === "orderbevestiging" ? "<div class='stempel'>ORDERBEVESTIGING</div>"
       : documentType === "inmeten" ? "<div class='stempel'>NA INMETEN</div>" : "";
@@ -835,7 +835,7 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: RED, marginBottom: 12 }}>Projectgegevens</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: 13, marginBottom: 16 }}>
-                {[["montage_naam", "Klant"], ["montage_adres", "Adres"], ["montage_postcode_stad", "Postcode en plaats"], ["datum", "Datum"], ["adviseur_voornaam", "Adviseur voornaam"], ["adviseur_achternaam", "Adviseur achternaam"], ["adviseur_email", "Adviseur e-mail"], ["adviseur_telefoon", "Adviseur telefoon"], ["referentie", "VH Referentie"]].map(([veld, label]) => (
+                {[["montage_naam", "Klant"], ["montage_adres", "Adres"], ["montage_postcode_stad", "Postcode en plaats"], ["datum", "Datum"], ["adviseur_voornaam", "Adviseur voornaam"], ["adviseur_achternaam", "Adviseur achternaam"], ["adviseur_email", "Adviseur e-mail"], ["adviseur_telefoon", "Adviseur telefoon"], ["projectnummer", "VH Referentie"]].map(([veld, label]) => (
                   <div key={veld}>
                     <label style={{ fontSize: 10, color: "#888", textTransform: "uppercase", display: "block", marginBottom: 2 }}>{label}</label>
                     <input value={offerte[veld] ?? ""} onChange={e => setProjectVeld(veld, e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: "6px 8px", border: "1.5px solid #dde", borderRadius: 6, fontSize: 13, fontWeight: 600, outline: "none" }} />
