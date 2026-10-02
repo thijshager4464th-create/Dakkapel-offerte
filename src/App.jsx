@@ -407,8 +407,10 @@ REGELS:
     })
   });
   const data = await response.json();
-  if (!data.content || !data.content[0]) throw new Error(JSON.stringify(data));
-  const text = data.content[0].text;
+  // Sonnet 5.5 kan eerst een (leeg) denkblok teruggeven; pak het tekstblok met de JSON
+  const tekstBlok = (data.content || []).find(b => b.type === "text");
+  if (!tekstBlok) throw new Error(JSON.stringify(data));
+  const text = tekstBlok.text;
   const clean = text.replace(/`{3}(?:json)?/g, "").trim();
   return JSON.parse(clean);
 }
