@@ -146,7 +146,9 @@ function indelingMaten(dak) {
 function indelingSVG({ items, somMm, maxHoogteMm }, kleur) {
   const W = 600;
   const hoogteMm = maxHoogteMm || 1200;
-  const s = Math.min(W / somMm, 250 / hoogteMm);
+  // Vaste tekenschaal ±1:30 op papier (1 px = 0,2646 mm), zodat een smal kozijn ook klein getekend wordt;
+  // alleen een heel brede of hoge indeling wordt verder verkleind om op de pagina te passen
+  const s = Math.min(1 / (30 * 0.2646), W / somMm, 230 / hoogteMm);
   const tw = somMm * s, hpx = hoogteMm * s;
   const L = 46, T = 20, lijn = "#2b2f33", maat = "#6b7177";
   const profiel = kleur || "#f4f4f4", glas = "#dce9f1", symbool = "#5f6b73";
@@ -754,7 +756,7 @@ h3.kopje+.lijst{margin-top:6px}
 .klein{font-size:10px;color:#555;margin-top:1px}
 .twee{display:grid;grid-template-columns:1fr 1fr;gap:26px}
 .indeling-tek{display:flex;justify-content:center;margin:10px auto 0;break-inside:avoid}
-.indeling-tek svg{width:170mm;max-width:100%}
+.indeling-tek svg{max-width:100%}
 .indeling-tek+.lijst{margin-top:12px}
 p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
 `;
