@@ -108,22 +108,17 @@ function normaliseerIndeling(indeling) {
   return uit;
 }
 
-// Indeling van een dakkapel met maten in werkelijke mm. Een kozijn kan een eigen tekening hebben (k.beeld = { src, w, h }).
-// De hoogte komt uit k.hoogte, anders uit de verhouding van de tekening. Alles wordt met dezelfde schaal getekend,
-// dus breedte én hoogte kloppen.
+// Indeling van een dakkapel met maten in werkelijke mm. De hoogte van een kozijn komt uit k.hoogte; een ingevulde
+// hoogte geldt ook voor kozijnen zonder hoogte (in één dakkapel meestal gelijk). Zonder hoogte schatten we die uit de
+// dakkapelhoogte, alleen voor de tekening (de tabel toont alleen ingevulde hoogtes).
 function indelingMaten(dak) {
-  // Kozijnen in één dakkapel zijn meestal even hoog: een ingevulde hoogte geldt ook voor kozijnen zonder hoogte
   const gedeeldeHoogte = mmGetal(((dak.indeling || []).find(k => k && !isPenant(k) && mmGetal(k.hoogte)) || {}).hoogte);
-  const items = (dak.indeling || []).map((k, i) => ({ k, i })).filter(({ k }) => k && (k.type || k.breedte || k.beeld)).map(({ k, i }) => {
+  const dakHoogte = mmGetal(dak.dakkapel_hoogte);
+  const geschatteHoogte = dakHoogte > 800 ? Math.round((dakHoogte - 300) / 10) * 10 : 1200;
+  const items = (dak.indeling || []).map((k, i) => ({ k, i })).filter(({ k }) => k && (k.type || k.breedte)).map(({ k, i }) => {
     const penant = isPenant(k);
-    const beeld = !penant && k.beeld && k.beeld.src ? k.beeld : null;
-    let mm = mmGetal(k.breedte);
-    let hoogteMm = penant ? 0 : (mmGetal(k.hoogte) || (beeld || mm ? gedeeldeHoogte : 0));
-    // Ontbrekende maat afleiden uit de verhouding van de tekening
-    if (beeld && beeld.w && beeld.h) {
-      if (mm && !hoogteMm) hoogteMm = Math.round(mm * beeld.h / beeld.w);
-      else if (!mm && hoogteMm) mm = Math.round(hoogteMm * beeld.w / beeld.h);
-    }
+    const mm = mmGetal(k.breedte);
+    const opgegeven = penant ? 0 : (mmGetal(k.hoogte) || gedeeldeHoogte);
     return {
       index: i,
       type: cleanTekst(k.type || (penant ? "Penant" : "Kozijn")),
@@ -131,27 +126,29 @@ function indelingMaten(dak) {
       mm,
       inhoud: (k.inhoud || []).filter(x => !isVentilatierooster(x)).map(x => cleanTekst(String(x))).filter(Boolean),
       penant,
-      beeld,
-      hoogteMm,
+      hoogteMm: penant ? 0 : (opgegeven || geschatteHoogte),
+      hoogteBekend: !!opgegeven,
     };
   });
   const somMm = items.reduce((s, k) => s + (k.mm || 0), 0);
   const ok = items.length > 0 && items.every(k => k.mm > 0) && somMm > 0;
-  const metBeeld = ok && items.some(k => k.beeld);
   const maxHoogteMm = Math.max(0, ...items.map(k => k.hoogteMm || 0));
-  return { items, somMm, ok, metBeeld, maxHoogteMm };
+  return { items, somMm, ok, maxHoogteMm, hoogteGeschat: items.some(k => !k.penant && !k.hoogteBekend) };
 }
 
-// Indelingstekening als SVG, op schaal, met maatlijnen zoals een technische tekening. Kozijnen met een eigen
-// tekening tonen die tekening; zonder tekening wordt het kozijn getekend (kader, glasvakken, draai/kiep-lijnen).
-function indelingSVG({ items, somMm, maxHoogteMm }, breedteAttr) {
+// Indelingstekening als SVG, op schaal, zoals een technische tekening: kozijnen met kader, tussenstijlen, draaiende
+// delen met vleugel en draai/kiep-symbool, gearceerde penanten, en maatlijnen per onderdeel, totaal en hoogte.
+// Profielmaten (kozijn 70, tussenstijl 80, vleugel 60, glaslat 20 mm) worden op dezelfde schaal getekend.
+function indelingSVG({ items, somMm, maxHoogteMm }, kleur) {
   const W = 600;
-  const hoogteMm = maxHoogteMm || Math.round(somMm * 0.3);
-  const s = Math.min(W / somMm, 260 / hoogteMm);
+  const hoogteMm = maxHoogteMm || 1200;
+  const s = Math.min(W / somMm, 250 / hoogteMm);
   const tw = somMm * s, hpx = hoogteMm * s;
   const L = 46, T = 20, lijn = "#2b2f33", maat = "#6b7177";
+  const profiel = kleur || "#f4f4f4", glas = "#dce9f1", symbool = "#5f6b73";
   const fmt = n => Number(n).toLocaleString("nl-NL");
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const r = (x, y, w, h, fill, sw) => "<rect x='" + x.toFixed(2) + "' y='" + y.toFixed(2) + "' width='" + Math.max(0, w).toFixed(2) + "' height='" + Math.max(0, h).toFixed(2) + "' fill='" + fill + "' stroke='" + lijn + "' stroke-width='" + (sw || 0.6) + "'/>";
   const tick = (x, y) => "<line x1='" + (x - 3) + "' y1='" + (y + 3) + "' x2='" + (x + 3) + "' y2='" + (y - 3) + "' stroke='" + maat + "' stroke-width='1'/>";
   const tekst = (x, y, t, extra) => "<text x='" + x + "' y='" + y + "' text-anchor='middle' font-size='10' fill='" + lijn + "'" + (extra || "") + ">" + t + "</text>";
   const maatlijn = (x1, x2, y, t) => "<line x1='" + x1 + "' y1='" + y + "' x2='" + x2 + "' y2='" + y + "' stroke='" + maat + "' stroke-width='0.8'/>" + tick(x1, y) + tick(x2, y) + (t ? tekst((x1 + x2) / 2, y - 4, t) : "");
@@ -159,29 +156,43 @@ function indelingSVG({ items, somMm, maxHoogteMm }, breedteAttr) {
   let x = L;
   items.forEach((k, i) => {
     const w = k.mm * s;
-    const h = k.penant ? hpx : (k.hoogteMm ? Math.min(hpx, k.hoogteMm * s) : hpx);
-    const y = T + hpx - h; // onderkanten op één lijn
     out.push(tekst(x + w / 2, T - 8, String(i + 1), " font-weight='600'"));
     if (k.penant) {
-      out.push("<rect x='" + x + "' y='" + T + "' width='" + w + "' height='" + hpx + "' fill='url(#arcering)' stroke='" + lijn + "' stroke-width='1'/>");
-    } else if (k.beeld) {
-      out.push("<image href='" + k.beeld.src + "' x='" + x + "' y='" + y + "' width='" + w + "' height='" + h + "' preserveAspectRatio='none'/>");
-      out.push("<rect x='" + x + "' y='" + y + "' width='" + w + "' height='" + h + "' fill='none' stroke='" + lijn + "' stroke-width='1'/>");
-    } else {
-      const vakken = (k.inhoud.length ? k.inhoud : [k.type]).map(vakLabel);
-      const f = Math.max(4, 68 * s); // kozijnprofiel ±68 mm
-      out.push("<rect x='" + x + "' y='" + y + "' width='" + w + "' height='" + h + "' fill='#fff' stroke='" + lijn + "' stroke-width='1.2'/>");
-      const vw = (w - (vakken.length + 1) * f) / vakken.length;
-      vakken.forEach((v, j) => {
-        const vx = x + f + j * (vw + f), vy = y + f, vh = h - 2 * f;
-        if (vw <= 0 || vh <= 0) return;
-        out.push("<rect x='" + vx + "' y='" + vy + "' width='" + vw + "' height='" + vh + "' fill='#e8f0f5' stroke='" + lijn + "' stroke-width='0.8'/>");
-        const streep = " fill='none' stroke='#9aa6ae' stroke-width='0.8' stroke-dasharray='4 3'";
-        if (/draai/i.test(v)) out.push("<polyline points='" + (vx + vw) + "," + vy + " " + vx + "," + (vy + vh / 2) + " " + (vx + vw) + "," + (vy + vh) + "'" + streep + "/>");
-        if (/kiep/i.test(v)) out.push("<polyline points='" + vx + "," + (vy + vh) + " " + (vx + vw / 2) + "," + vy + " " + (vx + vw) + "," + (vy + vh) + "'" + streep + "/>");
-        if (vw > 30) out.push(tekst(vx + vw / 2, vy + vh / 2 + 3.5, esc(v), " style='paint-order:stroke' stroke='#e8f0f5' stroke-width='4'"));
-      });
+      out.push("<rect x='" + x + "' y='" + T + "' width='" + w + "' height='" + hpx + "' fill='url(#arcering)' stroke='" + lijn + "' stroke-width='0.8'/>");
+      x += w;
+      return;
     }
+    const h = Math.min(hpx, k.hoogteMm * s);
+    const y = T + hpx - h; // onderkanten op één lijn
+    const kz = 70 * s, stijl = 80 * s, vl = 60 * s, gl = 20 * s;
+    const vakken = (k.inhoud.length ? k.inhoud : [k.type]).map(vakLabel);
+    out.push(r(x, y, w, h, profiel, 1));
+    const n = vakken.length;
+    const vw = (w - 2 * kz - (n - 1) * stijl) / n, vh = h - 2 * kz;
+    vakken.forEach((v, j) => {
+      const vx = x + kz + j * (vw + stijl), vy = y + kz;
+      if (j > 0) out.push(r(vx - stijl, vy, stijl, vh, profiel));
+      const draai = /draai/i.test(v), kiep = /kiep/i.test(v), deur = /deur/i.test(v);
+      let gx = vx, gy = vy, gw = vw, gh = vh;
+      if (draai || kiep || deur) {
+        // Vleugel binnen de opening, glas binnen de vleugel
+        out.push(r(vx, vy, vw, vh, profiel));
+        gx = vx + vl; gy = vy + vl; gw = vw - 2 * vl; gh = vh - 2 * vl;
+      } else {
+        gx = vx + gl; gy = vy + gl; gw = vw - 2 * gl; gh = vh - 2 * gl;
+      }
+      out.push(r(gx, gy, gw, gh, glas, 0.5));
+      const streep = " fill='none' stroke='" + symbool + "' stroke-width='0.7' stroke-dasharray='5 3'";
+      // Symbolen: de punt wijst naar de scharnierkant. Draai: scharnier aan de buitenkant van het kozijn, kruk naar
+      // het midden. Kiep: scharnier onder.
+      const scharnierLinks = n === 1 ? true : j < n / 2;
+      if (draai || deur) {
+        const sx = scharnierLinks ? gx : gx + gw, kx = scharnierLinks ? gx + gw : gx;
+        out.push("<polyline points='" + kx + "," + gy + " " + sx + "," + (gy + gh / 2) + " " + kx + "," + (gy + gh) + "'" + streep + "/>");
+      }
+      if (kiep) out.push("<polyline points='" + gx + "," + gy + " " + (gx + gw / 2) + "," + (gy + gh) + " " + (gx + gw) + "," + gy + "'" + streep + "/>");
+      if (gw > 34 && gh > 16) out.push(tekst(gx + gw / 2, gy + 12, esc(v), " font-size='8.5' fill='#3a3f44' style='paint-order:stroke' stroke='" + glas + "' stroke-width='3'"));
+    });
     x += w;
   });
   // Maatlijnen onder: per onderdeel en totaal
@@ -200,7 +211,7 @@ function indelingSVG({ items, somMm, maxHoogteMm }, breedteAttr) {
   out.push("<line x1='" + hx + "' y1='" + T + "' x2='" + hx + "' y2='" + (T + hpx) + "' stroke='" + maat + "' stroke-width='0.8'/>" + tick(hx, T) + tick(hx, T + hpx));
   out.push("<text transform='translate(" + (hx - 5) + "," + (T + hpx / 2) + ") rotate(-90)' text-anchor='middle' font-size='10' fill='" + lijn + "'>" + fmt(hoogteMm) + "</text>");
   const vbW = L + tw + 8, vbH = y2 + 8;
-  return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + vbW + " " + vbH + "' width='" + (breedteAttr || vbW) + "' style='display:block;max-width:100%;height:auto' font-family='IBM Plex Sans, Arial, sans-serif'>" +
+  return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + vbW + " " + vbH + "' width='" + vbW + "' style='display:block;max-width:100%;height:auto' font-family='IBM Plex Sans, Arial, sans-serif'>" +
     "<defs><pattern id='arcering' width='6' height='6' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'><rect width='6' height='6' fill='#d9dcde'/><line x1='0' y1='0' x2='0' y2='6' stroke='#9aa0a5' stroke-width='1'/></pattern></defs>" +
     out.join("") + "</svg>";
 }
@@ -240,15 +251,14 @@ function FotoVak({ label, src, onFile, onRemove, hoogte = 150 }) {
   );
 }
 
-// Indeling met eigen kozijntekeningen (bijv. uit Inzethor): per kozijn een tekening, breedte en hoogte,
-// penanten ertussen, en een voorbeeld op schaal zoals het in de dakkapelspecificatie komt
-function KozijnIndeling({ dak, onChange }) {
+// Bewerkbare indeling: per kozijn breedte en hoogte, penanten ertussen, en een voorbeeld op schaal
+// zoals het in de dakkapelspecificatie komt
+function KozijnIndeling({ dak, kleur, onChange }) {
   const indeling = dak.indeling || [];
   const maten = indelingMaten(dak);
   const { items, ok } = maten;
   const zet = (i, wijziging) => onChange(indeling.map((k, j) => j === i ? { ...k, ...wijziging } : k));
   const weg = (i) => onChange(indeling.filter((_, j) => j !== i));
-  const tekening = async (i, file) => zet(i, { beeld: file ? await leesAfbeeldingMetMaat(file) : null });
   const voegToe = (penant) => {
     const laatste = indeling[indeling.length - 1];
     const nieuw = penant ? [{ type: "Penant", breedte: PENANT_STANDAARD, inhoud: [], bijgevoegd: true }] : [{ type: "Kozijn", breedte: "", hoogte: "", inhoud: [] }];
@@ -259,8 +269,8 @@ function KozijnIndeling({ dak, onChange }) {
   const knop = { padding: "5px 10px", borderRadius: 6, border: "1.5px solid #dde", background: "white", color: "#555", fontSize: 11, fontWeight: 700, cursor: "pointer" };
   return (
     <div style={{ marginTop: 8, paddingTop: 14, borderTop: "2px dashed #eee" }}>
-      <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", marginBottom: 4 }}>Indeling en kozijntekeningen</div>
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>Van buitenaf gezien, van links naar rechts. Plak of sleep per kozijn je eigen tekening; die komt op schaal in de indeling van de dakkapelspecificatie. Zonder tekening wordt het kozijn getekend. Een ingevulde hoogte geldt ook voor de andere kozijnen.</div>
+      <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", marginBottom: 4 }}>Indeling kozijnen</div>
+      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>Van buitenaf gezien, van links naar rechts. De kozijnen worden op schaal getekend in de dakkapelspecificatie, in de RAL-kleur van de kozijn buitenzijde. Vul de kozijnhoogte in; die geldt ook voor de andere kozijnen.</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "stretch" }}>
         {indeling.map((k, i) => isPenant(k) ? (
           <div key={i} style={{ width: 92, background: "#5b6166", color: "white", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, justifyContent: "center", fontSize: 11 }}>
@@ -273,10 +283,10 @@ function KozijnIndeling({ dak, onChange }) {
         ) : (
           <div key={i} style={{ width: 200, border: "1px solid #eee", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, background: "#fafafa" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#333" }}>#{i + 1} {cleanTekst(k.type || "Kozijn")}</div>
-            <FotoVak hoogte={110} label="Kozijntekening" src={k.beeld && k.beeld.src} onFile={file => tekening(i, file)} onRemove={() => tekening(i, null)} />
+            <div style={{ fontSize: 11, color: "#666" }}>{((items.find(x => x.index === i) || {}).inhoud || []).join(" · ") || "—"}</div>
             <div style={{ display: "flex", gap: 6, fontSize: 11, color: "#666" }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>Breedte mm
-                <input type="number" min="0" value={zonderMm(k.breedte)} onChange={e => zet(i, { breedte: e.target.value })} style={{ ...veld, borderColor: mmGetal(k.breedte) || (k.beeld && mmGetal(k.hoogte)) ? "#dde" : RED }} />
+                <input type="number" min="0" value={zonderMm(k.breedte)} onChange={e => zet(i, { breedte: e.target.value })} style={{ ...veld, borderColor: mmGetal(k.breedte) ? "#dde" : RED }} />
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>Hoogte mm
                 <input type="number" min="0" value={zonderMm(k.hoogte)} onChange={e => zet(i, { hoogte: e.target.value })} placeholder={(items.find(x => x.index === i) || {}).hoogteMm ? String(items.find(x => x.index === i).hoogteMm) : ""} style={veld} />
@@ -293,7 +303,8 @@ function KozijnIndeling({ dak, onChange }) {
       {ok ? (
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>Voorbeeld op schaal, zoals in de dakkapelspecificatie</div>
-          <div style={{ maxWidth: 560 }} dangerouslySetInnerHTML={{ __html: indelingSVG(maten) }} />
+          <div style={{ maxWidth: 560 }} dangerouslySetInnerHTML={{ __html: indelingSVG(maten, kleur) }} />
+          {maten.hoogteGeschat && <div style={{ fontSize: 11, color: "#b7791f", marginTop: 4 }}>Hoogte geschat op {maten.maxHoogteMm.toLocaleString("nl-NL")} mm (dakkapelhoogte − 300 mm). Vul de kozijnhoogte in voor een exacte tekening.</div>}
         </div>
       ) : items.length > 0 && (
         <div style={{ fontSize: 11, color: RED, marginTop: 8 }}>Vul bij elk kozijn en penant een breedte in, anders kan de tekening niet op schaal in de PDF.</div>
@@ -624,9 +635,9 @@ export default function App() {
 
       const indMaten = indelingMaten(dak);
       const { items: indItems, ok: stripOk } = indMaten;
-      const stripHTML = stripOk ? "<div class='indeling-tek'>" + indelingSVG(indMaten) + "</div>" : "";
-      const metHoogte = indItems.some(k => !k.penant && k.hoogteMm);
-      const maatTekst = (k) => k.breedte ? (metHoogte && !k.penant && k.hoogteMm ? k.mm.toLocaleString("nl-NL") + " × " + k.hoogteMm.toLocaleString("nl-NL") + " mm" : k.breedte) : "";
+      const stripHTML = stripOk ? "<div class='indeling-tek'>" + indelingSVG(indMaten, ralHex((ral[di] || {}).kozijnBuiten)) + "</div>" : "";
+      const metHoogte = indItems.some(k => !k.penant && k.hoogteBekend);
+      const maatTekst = (k) => k.breedte ? (metHoogte && !k.penant && k.hoogteBekend ? k.mm.toLocaleString("nl-NL") + " × " + k.hoogteMm.toLocaleString("nl-NL") + " mm" : k.breedte) : "";
       const indTabel = indItems.length ? "<table class='lijst'><colgroup><col style='width:34px'><col style='width:28%'><col><col class='c-prijs'></colgroup><thead><tr><th>#</th><th>Onderdeel</th><th>Uitvoering</th><th class='num'>" + (metHoogte ? "Breedte × hoogte" : "Breedte") + "</th></tr></thead><tbody>" +
         indItems.map((k, i) => rij(td(String(i + 1)) + td("<strong>" + k.type + "</strong>") + td(k.inhoud.join(" · ") || "—") + td(maatTekst(k), "num"), i)).join("") + "</tbody></table>" : "";
       const indHTML = indItems.length ? "<h3 class='kopje'>Indeling <span class='hint'>van buitenaf gezien, van links naar rechts · maten in mm</span></h3>" + stripHTML + indTabel + "<p class='hint'>Zie de kozijnomschrijving voor verdere specificaties per kozijn.</p>" : "";
@@ -922,7 +933,7 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
                     </div>
 
                     {/* INDELING MET EIGEN KOZIJNTEKENINGEN */}
-                    <KozijnIndeling dak={dak} onChange={indeling => setIndeling(di, indeling)} />
+                    <KozijnIndeling dak={dak} kleur={ralHex((ral[di] || {}).kozijnBuiten)} onChange={indeling => setIndeling(di, indeling)} />
 
                     {/* KLEUREN KOZIJNEN (RAL) */}
                     <div style={{ marginTop: 8, paddingTop: 14, borderTop: "2px dashed #eee" }}>
