@@ -142,6 +142,69 @@ function indelingMaten(dak) {
   return { items, somMm, ok, metBeeld, maxHoogteMm };
 }
 
+// Indelingstekening als SVG, op schaal, met maatlijnen zoals een technische tekening. Kozijnen met een eigen
+// tekening tonen die tekening; zonder tekening wordt het kozijn getekend (kader, glasvakken, draai/kiep-lijnen).
+function indelingSVG({ items, somMm, maxHoogteMm }, breedteAttr) {
+  const W = 600;
+  const hoogteMm = maxHoogteMm || Math.round(somMm * 0.3);
+  const s = Math.min(W / somMm, 260 / hoogteMm);
+  const tw = somMm * s, hpx = hoogteMm * s;
+  const L = 46, T = 20, lijn = "#2b2f33", maat = "#6b7177";
+  const fmt = n => Number(n).toLocaleString("nl-NL");
+  const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const tick = (x, y) => "<line x1='" + (x - 3) + "' y1='" + (y + 3) + "' x2='" + (x + 3) + "' y2='" + (y - 3) + "' stroke='" + maat + "' stroke-width='1'/>";
+  const tekst = (x, y, t, extra) => "<text x='" + x + "' y='" + y + "' text-anchor='middle' font-size='10' fill='" + lijn + "'" + (extra || "") + ">" + t + "</text>";
+  const maatlijn = (x1, x2, y, t) => "<line x1='" + x1 + "' y1='" + y + "' x2='" + x2 + "' y2='" + y + "' stroke='" + maat + "' stroke-width='0.8'/>" + tick(x1, y) + tick(x2, y) + (t ? tekst((x1 + x2) / 2, y - 4, t) : "");
+  const out = [];
+  let x = L;
+  items.forEach((k, i) => {
+    const w = k.mm * s;
+    const h = k.penant ? hpx : (k.hoogteMm ? Math.min(hpx, k.hoogteMm * s) : hpx);
+    const y = T + hpx - h; // onderkanten op één lijn
+    out.push(tekst(x + w / 2, T - 8, String(i + 1), " font-weight='600'"));
+    if (k.penant) {
+      out.push("<rect x='" + x + "' y='" + T + "' width='" + w + "' height='" + hpx + "' fill='url(#arcering)' stroke='" + lijn + "' stroke-width='1'/>");
+    } else if (k.beeld) {
+      out.push("<image href='" + k.beeld.src + "' x='" + x + "' y='" + y + "' width='" + w + "' height='" + h + "' preserveAspectRatio='none'/>");
+      out.push("<rect x='" + x + "' y='" + y + "' width='" + w + "' height='" + h + "' fill='none' stroke='" + lijn + "' stroke-width='1'/>");
+    } else {
+      const vakken = (k.inhoud.length ? k.inhoud : [k.type]).map(vakLabel);
+      const f = Math.max(4, 68 * s); // kozijnprofiel ±68 mm
+      out.push("<rect x='" + x + "' y='" + y + "' width='" + w + "' height='" + h + "' fill='#fff' stroke='" + lijn + "' stroke-width='1.2'/>");
+      const vw = (w - (vakken.length + 1) * f) / vakken.length;
+      vakken.forEach((v, j) => {
+        const vx = x + f + j * (vw + f), vy = y + f, vh = h - 2 * f;
+        if (vw <= 0 || vh <= 0) return;
+        out.push("<rect x='" + vx + "' y='" + vy + "' width='" + vw + "' height='" + vh + "' fill='#e8f0f5' stroke='" + lijn + "' stroke-width='0.8'/>");
+        const streep = " fill='none' stroke='#9aa6ae' stroke-width='0.8' stroke-dasharray='4 3'";
+        if (/draai/i.test(v)) out.push("<polyline points='" + (vx + vw) + "," + vy + " " + vx + "," + (vy + vh / 2) + " " + (vx + vw) + "," + (vy + vh) + "'" + streep + "/>");
+        if (/kiep/i.test(v)) out.push("<polyline points='" + vx + "," + (vy + vh) + " " + (vx + vw / 2) + "," + vy + " " + (vx + vw) + "," + (vy + vh) + "'" + streep + "/>");
+        if (vw > 30) out.push(tekst(vx + vw / 2, vy + vh / 2 + 3.5, esc(v), " style='paint-order:stroke' stroke='#e8f0f5' stroke-width='4'"));
+      });
+    }
+    x += w;
+  });
+  // Maatlijnen onder: per onderdeel en totaal
+  const y1 = T + hpx + 20, y2 = y1 + 20;
+  let gx = L;
+  items.forEach(k => { const w = k.mm * s; out.push(maatlijn(gx, gx + w, y1, w >= 22 ? fmt(k.mm) : "")); gx += w; });
+  out.push(maatlijn(L, L + tw, y2, "<tspan font-weight='600'>" + fmt(somMm) + " mm</tspan>"));
+  gx = L;
+  [0].concat(items.map(k => k.mm)).forEach((m, i) => {
+    gx += m * s;
+    out.push("<line x1='" + gx + "' y1='" + (T + hpx + 4) + "' x2='" + gx + "' y2='" + ((i === 0 || i === items.length) ? y2 + 4 : y1 + 4) + "' stroke='" + maat + "' stroke-width='0.5'/>");
+  });
+  // Hoogtemaat links
+  const hx = L - 18;
+  out.push("<line x1='" + (L - 4) + "' y1='" + T + "' x2='" + (hx - 4) + "' y2='" + T + "' stroke='" + maat + "' stroke-width='0.5'/><line x1='" + (L - 4) + "' y1='" + (T + hpx) + "' x2='" + (hx - 4) + "' y2='" + (T + hpx) + "' stroke='" + maat + "' stroke-width='0.5'/>");
+  out.push("<line x1='" + hx + "' y1='" + T + "' x2='" + hx + "' y2='" + (T + hpx) + "' stroke='" + maat + "' stroke-width='0.8'/>" + tick(hx, T) + tick(hx, T + hpx));
+  out.push("<text transform='translate(" + (hx - 5) + "," + (T + hpx / 2) + ") rotate(-90)' text-anchor='middle' font-size='10' fill='" + lijn + "'>" + fmt(hoogteMm) + "</text>");
+  const vbW = L + tw + 8, vbH = y2 + 8;
+  return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + vbW + " " + vbH + "' width='" + (breedteAttr || vbW) + "' style='display:block;max-width:100%;height:auto' font-family='IBM Plex Sans, Arial, sans-serif'>" +
+    "<defs><pattern id='arcering' width='6' height='6' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'><rect width='6' height='6' fill='#d9dcde'/><line x1='0' y1='0' x2='0' y2='6' stroke='#9aa0a5' stroke-width='1'/></pattern></defs>" +
+    out.join("") + "</svg>";
+}
+
 // Fotovak: klikken, slepen of plakken (Ctrl+V)
 function FotoVak({ label, src, onFile, onRemove, hoogte = 150 }) {
   const [over, setOver] = useState(false);
@@ -181,8 +244,8 @@ function FotoVak({ label, src, onFile, onRemove, hoogte = 150 }) {
 // penanten ertussen, en een voorbeeld op schaal zoals het in de dakkapelspecificatie komt
 function KozijnIndeling({ dak, onChange }) {
   const indeling = dak.indeling || [];
-  const { items, ok, somMm, maxHoogteMm } = indelingMaten(dak);
-  const hoogteMm = maxHoogteMm || somMm * 0.3;
+  const maten = indelingMaten(dak);
+  const { items, ok } = maten;
   const zet = (i, wijziging) => onChange(indeling.map((k, j) => j === i ? { ...k, ...wijziging } : k));
   const weg = (i) => onChange(indeling.filter((_, j) => j !== i));
   const tekening = async (i, file) => zet(i, { beeld: file ? await leesAfbeeldingMetMaat(file) : null });
@@ -197,7 +260,7 @@ function KozijnIndeling({ dak, onChange }) {
   return (
     <div style={{ marginTop: 8, paddingTop: 14, borderTop: "2px dashed #eee" }}>
       <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", marginBottom: 4 }}>Indeling en kozijntekeningen</div>
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>Van buitenaf gezien, van links naar rechts. Plak of sleep per kozijn je eigen tekening; die komt op schaal in de indeling van de dakkapelspecificatie. Een ingevulde hoogte geldt ook voor de andere kozijnen; zonder hoogte volgen we de verhouding van de tekening.</div>
+      <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>Van buitenaf gezien, van links naar rechts. Plak of sleep per kozijn je eigen tekening; die komt op schaal in de indeling van de dakkapelspecificatie. Zonder tekening wordt het kozijn getekend. Een ingevulde hoogte geldt ook voor de andere kozijnen.</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "stretch" }}>
         {indeling.map((k, i) => isPenant(k) ? (
           <div key={i} style={{ width: 92, background: "#5b6166", color: "white", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, justifyContent: "center", fontSize: 11 }}>
@@ -229,18 +292,8 @@ function KozijnIndeling({ dak, onChange }) {
       </div>
       {ok ? (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>Voorbeeld op schaal</div>
-          <div style={{ display: "flex", width: "min(100%, " + Math.round(Math.min(520, 220 * somMm / hoogteMm)) + "px)", aspectRatio: somMm + " / " + hoogteMm, border: "1.5px solid #1f2226", background: "#fff" }}>
-            {items.map((k, i) => k.penant ? (
-              <div key={i} style={{ flex: k.mm + " 1 0", background: "#5b6166", color: "#fff", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", borderRight: i < items.length - 1 ? "1.5px solid #1f2226" : "none" }}>{i + 1}</div>
-            ) : (
-              <div key={i} style={{ flex: k.mm + " 1 0", minWidth: 0, display: "flex", alignItems: "flex-end", borderRight: i < items.length - 1 ? "1.5px solid #1f2226" : "none", background: k.beeld ? "#fff" : "#e5ecf0" }}>
-                {k.beeld
-                  ? <img src={k.beeld.src} alt={"Kozijn " + (i + 1)} style={{ display: "block", width: "100%", height: (k.hoogteMm && maxHoogteMm ? Math.min(100, k.hoogteMm / maxHoogteMm * 100) : 100) + "%", objectFit: "fill" }} />
-                  : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#555" }}>{i + 1}</div>}
-              </div>
-            ))}
-          </div>
+          <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>Voorbeeld op schaal, zoals in de dakkapelspecificatie</div>
+          <div style={{ maxWidth: 560 }} dangerouslySetInnerHTML={{ __html: indelingSVG(maten) }} />
         </div>
       ) : items.length > 0 && (
         <div style={{ fontSize: 11, color: RED, marginTop: 8 }}>Vul bij elk kozijn en penant een breedte in, anders kan de tekening niet op schaal in de PDF.</div>
@@ -569,32 +622,14 @@ export default function App() {
       const matHTML = mat.length ? "<h3 class='kopje'>Materialen</h3><table class='lijst'><colgroup><col style='width:30%'><col style='width:42%'><col style='width:28%'></colgroup><thead><tr><th>Onderdeel</th><th>Materiaal</th><th>Kleur</th></tr></thead><tbody>" +
         mat.map((x, i) => rij(td(c(x.onderdeel)) + td(c(x.materiaal)) + td(c(x.kleur)), i)).join("") + "</tbody></table>" : "";
 
-      const { items: indItems, somMm, ok: stripOk, metBeeld, maxHoogteMm } = indelingMaten(dak);
-      // Breedte van de tekening schaalt mee met de werkelijke kozijnbreedte (182mm content = ±6000mm werkelijk),
-      // zodat een smal kozijn niet over de hele paginabreedte wordt uitgerekt.
-      let stripBreedteMm = stripOk ? Math.min(182, Math.max(50, somMm * 0.03)) : 0;
-      // Met eigen kozijntekeningen tekenen we ook de hoogte op dezelfde schaal (max 90 mm hoog op papier)
-      let stripHoogte = "";
-      if (metBeeld) {
-        const hoogteMm = maxHoogteMm || somMm * 0.3;
-        let schaal = stripBreedteMm / somMm;
-        if (hoogteMm * schaal > 90) { schaal = 90 / hoogteMm; stripBreedteMm = somMm * schaal; }
-        stripHoogte = "height:" + (hoogteMm * schaal).toFixed(2) + "mm;";
-      }
-      const stripStijl = "style='width:" + stripBreedteMm + "mm;" + stripHoogte + "margin:8px auto 0'";
-      const stripMatenStijl = "style='width:" + stripBreedteMm + "mm;margin:3px auto 0'";
-      const elHTML = (k, i) => {
-        if (k.penant) return "<div class='el penant' style='flex:" + k.mm + " 1 0'><span>" + (i + 1) + "</span></div>";
-        // Hoogte van dit kozijn als percentage van de hoogste; onderkant op één lijn
-        const hPct = metBeeld && k.hoogteMm && maxHoogteMm ? Math.min(100, k.hoogteMm / maxHoogteMm * 100) : 100;
-        if (k.beeld) return "<div class='el kozijn beeld' style='flex:" + k.mm + " 1 0'><img src='" + k.beeld.src + "' style='height:" + hPct.toFixed(2) + "%' alt='Kozijn " + (i + 1) + "'/></div>";
-        return "<div class='el kozijn' style='flex:" + k.mm + " 1 0'>" + (k.inhoud.length ? k.inhoud : [k.type]).map(v => "<div class='vak'>" + vakLabel(v) + "</div>").join("") + "</div>";
-      };
-      const stripHTML = stripOk ? "<div class='strip" + (metBeeld ? " met-beeld" : "") + "' " + stripStijl + ">" + indItems.map(elHTML).join("") + "</div><div class='strip-maten' " + stripMatenStijl + ">" + indItems.map((k, i) =>
-        "<div style='flex:" + k.mm + " 1 0'>" + (i + 1) + (k.mm / somMm >= 0.1 ? " · " + k.breedte + (k.beeld && k.hoogteMm ? " × " + k.hoogteMm + " mm" : "") : "") + "</div>").join("") + "</div>" : "";
-      const indTabel = indItems.length ? "<table class='lijst'><colgroup><col style='width:34px'><col style='width:28%'><col><col class='c-prijs'></colgroup><thead><tr><th>#</th><th>Onderdeel</th><th>Uitvoering</th><th class='num'>Breedte</th></tr></thead><tbody>" +
-        indItems.map((k, i) => rij(td(String(i + 1)) + td("<strong>" + k.type + "</strong>") + td(k.inhoud.join(" · ") || "—") + td(k.breedte, "num"), i)).join("") + "</tbody></table>" : "";
-      const indHTML = indItems.length ? "<h3 class='kopje'>Indeling <span class='hint'>van buitenaf gezien, van links naar rechts</span></h3>" + stripHTML + indTabel + "<p class='hint'>Zie de kozijnomschrijving voor verdere specificaties per kozijn.</p>" : "";
+      const indMaten = indelingMaten(dak);
+      const { items: indItems, ok: stripOk } = indMaten;
+      const stripHTML = stripOk ? "<div class='indeling-tek'>" + indelingSVG(indMaten) + "</div>" : "";
+      const metHoogte = indItems.some(k => !k.penant && k.hoogteMm);
+      const maatTekst = (k) => k.breedte ? (metHoogte && !k.penant && k.hoogteMm ? k.mm.toLocaleString("nl-NL") + " × " + k.hoogteMm.toLocaleString("nl-NL") + " mm" : k.breedte) : "";
+      const indTabel = indItems.length ? "<table class='lijst'><colgroup><col style='width:34px'><col style='width:28%'><col><col class='c-prijs'></colgroup><thead><tr><th>#</th><th>Onderdeel</th><th>Uitvoering</th><th class='num'>" + (metHoogte ? "Breedte × hoogte" : "Breedte") + "</th></tr></thead><tbody>" +
+        indItems.map((k, i) => rij(td(String(i + 1)) + td("<strong>" + k.type + "</strong>") + td(k.inhoud.join(" · ") || "—") + td(maatTekst(k), "num"), i)).join("") + "</tbody></table>" : "";
+      const indHTML = indItems.length ? "<h3 class='kopje'>Indeling <span class='hint'>van buitenaf gezien, van links naar rechts · maten in mm</span></h3>" + stripHTML + indTabel + "<p class='hint'>Zie de kozijnomschrijving voor verdere specificaties per kozijn.</p>" : "";
 
       const bijlage = `<section class="pagina">
         ${kop("Bijlage " + letterFor(di) + " · Technische specificatie dakkapel " + (di + 1) + " " + positie)}
@@ -703,17 +738,9 @@ h3.kopje .hint{margin-left:6px}
 h3.kopje+.lijst{margin-top:6px}
 .klein{font-size:10px;color:#555;margin-top:1px}
 .twee{display:grid;grid-template-columns:1fr 1fr;gap:26px}
-.strip{display:flex;height:60px;border:1.5px solid #1f2226;margin-top:8px;break-inside:avoid}
-.strip .el{display:flex;min-width:0;border-right:1.5px solid #1f2226}
-.strip .el:last-child{border-right:none}
-.strip .penant{background:#5b6166;color:#fff;align-items:center;justify-content:center;font-size:10px;font-weight:600}
-.strip .kozijn{background:#fff;gap:3px;padding:4px}
-.strip .vak{flex:1 1 0;min-width:0;background:#e5ecf0;border:1px solid #9aa6ae;display:flex;align-items:center;justify-content:center;font-size:9px;color:#333;overflow:hidden;white-space:nowrap}
-.strip.met-beeld .kozijn.beeld{padding:0;background:#fff;align-items:flex-end}
-.strip.met-beeld .kozijn.beeld img{display:block;width:100%;object-fit:fill}
-.strip-maten{display:flex;font-size:9.5px;color:#595959;margin-top:3px}
-.strip-maten div{min-width:0;text-align:center;white-space:nowrap;overflow:hidden}
-.strip-maten+.lijst{margin-top:10px}
+.indeling-tek{display:flex;justify-content:center;margin:10px auto 0;break-inside:avoid}
+.indeling-tek svg{width:170mm;max-width:100%}
+.indeling-tek+.lijst{margin-top:12px}
 p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
 `;
 
