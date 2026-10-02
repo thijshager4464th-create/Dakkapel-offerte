@@ -339,8 +339,8 @@ async function leesOffertePDF(base64) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 4000,
+      model: "claude-sonnet-5-5",
+      max_tokens: 8000,
       messages: [{
         role: "user",
         content: [
@@ -362,7 +362,8 @@ REGELS:
 - kostenposten van een dakkapel = ALLEEN de opties die onder "Opties & overige" van DIE dakkapel staan. Bedragen EXACT overnemen.
 - zonwering, indeling, materialen van een dakkapel = alleen wat in de bijlage van DIE specifieke dakkapel staat (bijv. Bijlage A hoort bij dakkapel 1, Bijlage B bij dakkapel 2)
 - extra_posten = ALLE losse, offerte-brede posten die NIET bij één specifieke dakkapel horen, zoals: transport, kraan, vergunning, brandstoftoeslag, technische tekening, technisch inmeten, afvoeren bouwafval, meerprijs bijzonder transport etc.
-- Alle bedragen EXACT overnemen.
+- Alle bedragen EXACT overnemen, cijfer voor cijfer zoals ze in de PDF staan (bijv. 354,55 wordt 354.55). Niet afronden, niet omrekenen, geen btw erbij of eraf.
+- offerte_totaal_excl = het totaalbedrag exclusief btw onderaan de offerte (het bedrag waar de btw nog bij komt).
 - indeling = de vakken van links naar rechts (kozijnen en penanten) met hun breedte; vul "hoogte" alleen in als de hoogte van dat kozijn in de offerte staat.
 - Laat de zinsnede "kozijn door derden", "kozijn van derden" of "(aangeleverd) door derden" weg uit alle teksten; de rest van de tekst blijft staan.
 
@@ -397,7 +398,8 @@ REGELS:
       "kostenposten": [{"omschrijving": "", "aantal": 1, "totaal_excl": 0}]
     }
   ],
-  "extra_posten": [{"omschrijving": "", "aantal": 1, "prijs_excl": 0}]
+  "extra_posten": [{"omschrijving": "", "aantal": 1, "prijs_excl": 0}],
+  "offerte_totaal_excl": 0
 }`
           }
         ]
@@ -409,6 +411,20 @@ REGELS:
   const text = data.content[0].text;
   const clean = text.replace(/`{3}(?:json)?/g, "").trim();
   return JSON.parse(clean);
+}
+
+// Som van alle ingelezen bedragen (zonder marge) tegen het totaal excl. btw uit de Van Hattem offerte,
+// zodat een verkeerd gelezen bedrag opvalt voordat de offerte de deur uit gaat.
+function controleerTotaal(o) {
+  const pdfTotaal = Number(o && o.offerte_totaal_excl) || 0;
+  if (!pdfTotaal) return null;
+  let som = 0;
+  (o.dakkapellen || []).forEach(d => {
+    som += Number(d.dakkapel_prijs_excl) || 0;
+    (d.kostenposten || []).forEach(k => { som += Number(k.totaal_excl) || 0; });
+  });
+  (o.extra_posten || []).forEach(k => { som += Number(k.prijs_excl) || 0; });
+  return { som, pdfTotaal, verschil: pdfTotaal - som };
 }
 
 function formatEur(n) {
@@ -830,6 +846,15 @@ p.av{font-size:10.5px;color:#444;line-height:1.7;margin-top:6px}
         {stap === "preview" && offerte && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <datalist id="ral-opties">{RAL_OPTIES.map(o => <option key={o} value={o} />)}</datalist>
+            {(() => {
+              const ct = controleerTotaal(offerte);
+              if (!ct || Math.abs(ct.verschil) < 0.05) return null;
+              return (
+                <div style={{ background: "#fff0f0", border: "1px solid #f5c6c6", borderRadius: 10, padding: "12px 18px", color: "#c0392b", fontSize: 13 }}>
+                  Let op: de ingelezen bedragen tellen op tot {formatEur(ct.som)} excl. btw, maar de Van Hattem offerte heeft als totaal {formatEur(ct.pdfTotaal)} excl. btw (verschil {formatEur(ct.verschil)}). Waarschijnlijk is er een bedrag verkeerd gelezen; controleer de prijzen hieronder met de PDF of lees de PDF opnieuw in.
+                </div>
+              );
+            })()}
 
             {/* PROJECTGEGEVENS */}
             <div style={{ background: "white", borderRadius: 12, padding: "20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", borderTop: "3px solid " + RED }}>
